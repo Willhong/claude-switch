@@ -1,0 +1,23 @@
+{
+  "name": "claude-switch",
+  "version": "1.0.0",
+  "description": "Profile switching system for Claude Code",
+  "main": "scripts/profile-switcher.js",
+  "scripts": {
+    "init": "node scripts/profile-switcher.js init",
+    "list": "node scripts/profile-switcher.js list",
+    "switch": "node scripts/profile-switcher.js switch",
+    "postinstall": "node scripts/profile-switcher.js init"
+  },
+  "keywords": [
+    "claude-code",
+    "profile",
+    "switch",
+    "configuration"
+  ],
+  "author": "Hong",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "claude-switch",
+  "owner": {
+    "name": "Hong",
+    "email": ""
+  },
+  "metadata": {
+    "description": "Profile switching system for Claude Code - manage multiple configurations (plugins, hooks, commands, skills)",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "claude-switch",
+      "source": "./",
+      "description": "Switch between different Claude Code profiles. Each profile can have its own set of plugins, hooks, environment variables, and component configurations. Includes 'current' (snapshot) and 'clean' (minimal) profiles by default.",
+      "category": "utilities",
+      "tags": [
+        "profile",
+        "switch",
+        "configuration",
+        "settings",
+        "management",
+        "backup"
+      ]
+    }
+  ],
+  "version": "1.0.0"
+}
