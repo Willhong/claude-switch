@@ -1,59 +1,59 @@
-# /switch:restore - 백업에서 복원
+# /switch:restore - Restore from Backup
 
-백업에서 설정을 복원합니다.
+Restores settings from a backup.
 
-## 사용법
+## Usage
 
 ```
-/switch:restore <백업이름>
+/switch:restore <backup-name>
 ```
 
-예시:
+Examples:
 - `/switch:restore backup-2026-02-04T14-30-00-000Z`
 
-## 실행 방법
+## Execution
 
-1. 먼저 백업 목록 확인:
+1. First check backup list:
 ```bash
 node ~/.claude/scripts/profile-switcher.js backups
 ```
 
-2. 복원 실행:
+2. Execute restore:
 ```bash
-node ~/.claude/scripts/profile-switcher.js restore <백업이름>
+node ~/.claude/scripts/profile-switcher.js restore <backup-name>
 ```
 
-## 복원 전 확인
+## Pre-Restore Confirmation
 
-사용자에게 복원 확인을 요청하세요:
-
-```
-## ⚠️ 백업 복원 확인
-
-**'<백업이름>'** 백업으로 복원하시겠습니까?
-
-- 이전 프로파일: <프로파일명>
-- 백업 시간: <시간>
-
-현재 설정이 덮어씌워집니다.
-
-복원을 진행하려면 "예" 또는 "복원"을 입력하세요.
-```
-
-## 복원 후 안내
+Request user confirmation before restoring:
 
 ```
-## ✅ 복원 완료
+## Confirm Backup Restore
 
-**'<백업이름>'** 백업에서 복원되었습니다.
+Restore from **'<backup-name>'** backup?
 
-- 활성 프로파일: <프로파일명>
+- Previous profile: <profile-name>
+- Backup time: <time>
 
-⚠️ **중요**: 변경사항을 적용하려면 **Claude Code를 재시작**해야 합니다.
+Current settings will be overwritten.
+
+Type "yes" or "restore" to proceed.
 ```
 
-## 주의사항
+## Post-Restore Message
 
-- 복원 시 현재 settings.json이 덮어씌워집니다
-- 복원 전 현재 상태는 새로운 백업으로 저장되지 않습니다
-- 재시작하지 않으면 이전 설정이 유지됩니다
+```
+## Restore Complete
+
+Restored from **'<backup-name>'** backup.
+
+- Active profile: <profile-name>
+
+**Important**: You must **restart Claude Code** for changes to take effect.
+```
+
+## Notes
+
+- Current settings.json will be overwritten on restore
+- Current state is NOT saved as a new backup before restore
+- Changes won't apply without restart

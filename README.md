@@ -1,23 +1,23 @@
 # claude-switch
 
-Claude Code 프로파일 스위칭 시스템 - 여러 설정을 쉽게 관리하고 전환하세요.
+Claude Code profile switching system - easily manage and switch between multiple configurations.
 
-## 기능
+## Features
 
-- **프로파일 관리**: 여러 설정 프로파일 생성, 전환, 삭제
-- **자동 백업**: 전환 시 자동 백업으로 안전한 설정 변경
-- **전체 설정 지원**: 플러그인, 훅, 환경변수, 권한, 상태바 등 모든 설정 포함
-- **빠른 전환**: 깨끗한 환경과 개발 환경 간 빠른 전환
+- **Profile Management**: Create, switch, and delete multiple settings profiles
+- **Auto Backup**: Safe settings changes with automatic backup on switch
+- **Full Settings Support**: Includes plugins, hooks, env vars, permissions, statusline, etc.
+- **Quick Switching**: Fast switching between clean and development environments
 
-## 설치
+## Installation
 
-### 플러그인으로 설치
+### Install as Plugin
 
 ```bash
 claude plugins:add claude-switch
 ```
 
-### 수동 설치
+### Manual Installation
 
 ```bash
 git clone https://github.com/hong/claude-switch.git ~/.claude/plugins/claude-switch
@@ -25,56 +25,56 @@ cd ~/.claude/plugins/claude-switch
 node scripts/profile-switcher.js init
 ```
 
-## 사용법
+## Usage
 
-### 슬래시 커맨드
+### Slash Commands
 
-| 커맨드 | 설명 |
-|--------|------|
-| `/switch:list` | 프로파일 목록 조회 |
-| `/switch:to <name>` | 프로파일 전환 |
-| `/switch:create <name>` | 새 프로파일 생성 |
-| `/switch:export [name]` | 현재 설정 내보내기 |
-| `/switch:get <name>` | 프로파일 상세 정보 |
-| `/switch:rename <old> <new>` | 프로파일 이름 변경 |
-| `/switch:delete <name>` | 프로파일 삭제 |
-| `/switch:backups` | 백업 목록 조회 |
-| `/switch:restore <backup>` | 백업에서 복원 |
+| Command | Description |
+|---------|-------------|
+| `/switch:list` | List all profiles |
+| `/switch:to <name>` | Switch to a profile |
+| `/switch:create <name>` | Create new profile |
+| `/switch:export [name]` | Export current settings |
+| `/switch:get <name>` | Get profile details |
+| `/switch:rename <old> <new>` | Rename a profile |
+| `/switch:delete <name>` | Delete a profile |
+| `/switch:backups` | List backups |
+| `/switch:restore <backup>` | Restore from backup |
 
-### CLI 직접 사용
+### Direct CLI Usage
 
 ```bash
-# 초기화
+# Initialize
 node scripts/profile-switcher.js init
 
-# 프로파일 목록
+# List profiles
 node scripts/profile-switcher.js list
 
-# 깨끗한 프로파일로 전환
+# Switch to clean profile
 node scripts/profile-switcher.js switch clean
 
-# 현재 설정 복사하여 새 프로파일 생성
-node scripts/profile-switcher.js create dev --from-current --desc="개발용"
+# Create new profile from current settings
+node scripts/profile-switcher.js create dev --from-current --desc="Development"
 
-# 프로파일 상세 정보
+# Get profile details
 node scripts/profile-switcher.js get dev
 ```
 
-## 기본 프로파일
+## Default Profiles
 
-설치 시 두 개의 기본 프로파일이 생성됩니다:
+Two default profiles are created on installation:
 
-| 프로파일 | 설명 |
-|----------|------|
-| `current` | 현재 설정의 스냅샷 (자동 생성) |
-| `clean` | 플러그인/훅 없는 깨끗한 상태 |
+| Profile | Description |
+|---------|-------------|
+| `current` | Snapshot of current settings (auto-generated) |
+| `clean` | Clean state without plugins/hooks |
 
-## 프로파일 구조
+## Profile Structure
 
 ```json
 {
   "name": "dev",
-  "description": "개발용 설정",
+  "description": "Development settings",
   "createdAt": "2026-02-04T...",
   "settings": {
     "enabledPlugins": { ... },
@@ -91,28 +91,28 @@ node scripts/profile-switcher.js get dev
 }
 ```
 
-## 디렉토리 구조
+## Directory Structure
 
 ```
 ~/.claude/
 ├── profiles/
-│   ├── profiles.json      # 메타데이터
-│   ├── current/           # 현재 설정 스냅샷
+│   ├── profiles.json      # Metadata
+│   ├── current/           # Current settings snapshot
 │   │   └── profile.json
-│   ├── clean/             # 깨끗한 프로파일
+│   ├── clean/             # Clean profile
 │   │   └── profile.json
-│   └── .backups/          # 자동 백업
+│   └── .backups/          # Auto backups
 │       └── backup-<timestamp>/
 │
-└── settings.json          # 메인 설정 (전환 시 덮어씌움)
+└── settings.json          # Main settings (overwritten on switch)
 ```
 
-## 주의사항
+## Notes
 
-- 프로파일 전환 후 **Claude Code 재시작** 필요
-- 자동 백업은 최대 10개 유지 (오래된 것부터 자동 삭제)
-- `current` 프로파일은 삭제/이름변경 불가 (시스템 스냅샷)
+- **Restart Claude Code** after profile switch
+- Auto backups retain maximum 10 entries (oldest deleted first)
+- `current` profile cannot be deleted/renamed (system snapshot)
 
-## 라이선스
+## License
 
 MIT

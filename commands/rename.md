@@ -1,38 +1,38 @@
-# /switch:rename - 프로파일 이름 변경
+# /switch:rename - Rename Profile
 
-프로파일의 이름을 변경합니다.
+Renames a profile.
 
-## 사용법
+## Usage
 
 ```
-/switch:rename <현재이름> <새이름>
+/switch:rename <current-name> <new-name>
 ```
 
-예시:
+Examples:
 - `/switch:rename old-profile new-profile`
 - `/switch:rename dev development`
 
-## 실행 방법
+## Execution
 
 ```bash
-node ~/.claude/scripts/profile-switcher.js rename <현재이름> <새이름>
+node ~/.claude/scripts/profile-switcher.js rename <current-name> <new-name>
 ```
 
-## 이름 변경 후 안내
+## Post-Rename Message
 
 ```
-## ✅ 프로파일 이름 변경 완료
+## Profile Renamed
 
-**'<현재이름>'** → **'<새이름>'**
+**'<current-name>'** -> **'<new-name>'**
 
-프로파일 디렉토리가 이동되었습니다:
-- 이전: `~/.claude/profiles/<현재이름>/`
-- 현재: `~/.claude/profiles/<새이름>/`
+Profile directory has been moved:
+- Previous: `~/.claude/profiles/<current-name>/`
+- Current: `~/.claude/profiles/<new-name>/`
 ```
 
-## 주의사항
+## Notes
 
-- 'current' 프로파일은 이름 변경 불가 (시스템 스냅샷)
-- 이미 존재하는 이름으로 변경 불가
-- 활성 프로파일도 이름 변경 가능 (자동으로 activeProfile 업데이트)
-- 새 이름은 영문, 숫자, 하이픈, 언더스코어만 사용 가능
+- Cannot rename 'current' profile (system snapshot)
+- Cannot rename to an existing name
+- Active profile can be renamed (activeProfile automatically updated)
+- New name can only contain letters, numbers, hyphens, and underscores

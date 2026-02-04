@@ -1,55 +1,55 @@
-# /switch:delete - 프로파일 삭제
+# /switch:delete - Delete Profile
 
-프로파일을 삭제합니다.
+Deletes a profile.
 
-## 사용법
+## Usage
 
 ```
-/switch:delete <프로파일명>
+/switch:delete <profile-name>
 ```
 
-예시:
+Examples:
 - `/switch:delete old-profile`
 - `/switch:delete test`
 
-## 실행 방법
+## Execution
 
-1. 먼저 프로파일 목록 확인:
+1. First check profile list:
 ```bash
 node ~/.claude/scripts/profile-switcher.js list
 ```
 
-2. 삭제 실행:
+2. Execute deletion:
 ```bash
-node ~/.claude/scripts/profile-switcher.js delete <프로파일명>
+node ~/.claude/scripts/profile-switcher.js delete <profile-name>
 ```
 
-## 삭제 전 확인
+## Pre-Delete Confirmation
 
-사용자에게 삭제 확인을 요청하세요:
-
-```
-## ⚠️ 프로파일 삭제 확인
-
-**'<프로파일명>'** 프로파일을 삭제하시겠습니까?
-
-이 작업은 되돌릴 수 없습니다.
-
-삭제를 진행하려면 "예" 또는 "삭제"를 입력하세요.
-```
-
-## 삭제 후 안내
+Request user confirmation before deletion:
 
 ```
-## ✅ 프로파일 삭제 완료
+## Confirm Profile Deletion
 
-**'<프로파일명>'** 프로파일이 삭제되었습니다.
+Delete **'<profile-name>'** profile?
 
-삭제된 디렉토리: `~/.claude/profiles/<프로파일명>/`
+This action cannot be undone.
+
+Type "yes" or "delete" to proceed.
 ```
 
-## 주의사항
+## Post-Delete Message
 
-- 'current' 프로파일은 삭제 불가 (시스템 스냅샷)
-- 현재 활성 프로파일은 삭제 불가 (먼저 다른 프로파일로 전환 필요)
-- 삭제된 프로파일은 복구 불가 (단, `.backups/`의 백업은 유지됨)
+```
+## Profile Deleted
+
+**'<profile-name>'** profile has been deleted.
+
+Deleted directory: `~/.claude/profiles/<profile-name>/`
+```
+
+## Notes
+
+- Cannot delete 'current' profile (system snapshot)
+- Cannot delete currently active profile (switch to another profile first)
+- Deleted profiles cannot be recovered (but backups in `.backups/` are retained)

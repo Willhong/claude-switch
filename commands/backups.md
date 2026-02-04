@@ -1,38 +1,38 @@
-# /switch:backups - 백업 목록 조회
+# /switch:backups - List Backups
 
-자동 생성된 백업 목록을 조회합니다.
+Lists automatically generated backups.
 
-## 사용법
+## Usage
 
 ```
 /switch:backups
 ```
 
-## 실행 방법
+## Execution
 
 ```bash
 node ~/.claude/scripts/profile-switcher.js backups
 ```
 
-## 출력 형식
+## Output Format
 
 ```
-## 💾 백업 목록
+## Backup List
 
-| 백업 이름 | 이전 프로파일 | 백업 시간 |
-|-----------|---------------|-----------|
+| Backup Name | Previous Profile | Backup Time |
+|-------------|------------------|-------------|
 | backup-2026-02-04T14-30-00 | current | 2026-02-04 14:30:00 |
 | backup-2026-02-04T12-15-00 | dev | 2026-02-04 12:15:00 |
 | ... | ... | ... |
 
-총 N개의 백업 (최대 10개 유지)
+Total: N backups (maximum 10 retained)
 
-### 복원 방법:
-`/switch:restore <백업이름>` 명령어로 특정 백업 시점으로 복원할 수 있습니다.
+### Restore:
+Use `/switch:restore <backup-name>` to restore to a specific backup point.
 ```
 
-## 참고
+## Notes
 
-- 백업은 프로파일 전환 시 자동 생성됩니다
-- 최대 10개의 백업이 유지되며, 오래된 것부터 자동 삭제됩니다
-- 백업 위치: `~/.claude/profiles/.backups/`
+- Backups are automatically created when switching profiles
+- Maximum 10 backups retained; oldest deleted first
+- Backup location: `~/.claude/profiles/.backups/`

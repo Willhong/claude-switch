@@ -1,55 +1,55 @@
-# /switch:get - 프로파일 상세 정보
+# /switch:get - Profile Details
 
-프로파일의 상세 정보를 조회합니다.
+View detailed information about a profile.
 
-## 사용법
+## Usage
 
 ```
-/switch:get <프로파일명>
+/switch:get <profile-name>
 ```
 
-예시:
+Examples:
 - `/switch:get current`
 - `/switch:get dev`
 - `/switch:get clean`
 
-## 실행 방법
+## Execution
 
 ```bash
-node ~/.claude/scripts/profile-switcher.js get <프로파일명>
+node ~/.claude/scripts/profile-switcher.js get <profile-name>
 ```
 
-## 출력 형식
+## Output Format
 
 ```
-## 📋 프로파일 상세: <프로파일명>
+## Profile Details: <profile-name>
 
-**상태**: ✅ 활성 / ⬜ 비활성
-**설명**: <설명>
-**생성일**: <날짜>
-**수정일**: <날짜>
+**Status**: Active / Inactive
+**Description**: <description>
+**Created**: <date>
+**Modified**: <date>
 
-### 🔌 활성화된 플러그인
+### Enabled Plugins
 - frontend-design@claude-code-plugins
 - claude-dashboard@claude-dashboard
 - ...
 
-### 🪝 설정된 훅
+### Configured Hooks
 - SessionStart
 
-### ⚙️ 환경 변수
+### Environment Variables
 - ENABLE_TOOL_SEARCH: true
 
-### 🛡️ 권한
-- 기본 모드: default
-- 허용: Bash(uv pip install:*)
+### Permissions
+- Default mode: default
+- Allow: Bash(uv pip install:*)
 
-### 📊 상태바
-[있음/없음]
+### Statusline
+[Yes/No]
 ```
 
-## 용도
+## Use Cases
 
-- 프로파일 전환 전 내용 확인
-- 프로파일 간 설정 비교
-- 현재 활성 프로파일 설정 확인
+- Check profile contents before switching
+- Compare settings between profiles
+- Verify current active profile settings

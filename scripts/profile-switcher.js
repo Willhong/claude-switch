@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * Claude Code Profile Switcher
- * 프로파일 CRUD 및 스위칭 로직
+ * Profile CRUD and switching logic
  *
- * @version 1.0.0
+ * @version 1.1.0
  * @author Hong
  */
 
@@ -18,14 +18,14 @@ const BACKUPS_DIR = path.join(PROFILES_DIR, '.backups');
 const PROFILES_JSON = path.join(PROFILES_DIR, 'profiles.json');
 const SETTINGS_JSON = path.join(CLAUDE_DIR, 'settings.json');
 const ACTIVE_MANIFEST = path.join(CLAUDE_DIR, 'active-manifest.json');
-// MCP 설정은 ~/.claude.json에 저장됨
+// MCP settings stored in ~/.claude.json
 const CLAUDE_JSON = path.join(process.env.HOME || process.env.USERPROFILE, '.claude.json');
 
-// 심볼릭 링크로 관리할 디렉토리 목록
+// Directories managed via symlinks
 const SYMLINK_DIRS = ['commands', 'skills', 'agents'];
 const IS_WINDOWS = process.platform === 'win32';
 
-// 유틸리티 함수
+// Utility functions
 function ensureDir(dir) {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
@@ -48,7 +48,7 @@ function getTimestamp() {
     return new Date().toISOString().replace(/[:.]/g, '-');
 }
 
-// 심볼릭 링크 유틸리티
+// Symlink utilities
 function isSymlink(filepath) {
     try {
         return fs.lstatSync(filepath).isSymbolicLink();
@@ -69,9 +69,9 @@ function removeSymlinkOrDir(filepath) {
     if (!fs.existsSync(filepath) && !isSymlink(filepath)) return;
 
     if (isSymlink(filepath)) {
-        // 심볼릭 링크 제거
+        // Remove symlink
         if (IS_WINDOWS) {
-            // Windows에서는 junction은 rmdir로 제거
+            // On Windows, junctions are removed with rmdir
             try {
                 fs.rmdirSync(filepath);
             } catch {
@@ -81,28 +81,28 @@ function removeSymlinkOrDir(filepath) {
             fs.unlinkSync(filepath);
         }
     } else if (fs.existsSync(filepath)) {
-        // 일반 디렉토리는 삭제하지 않음 (안전장치)
+        // Don't delete regular directories (safety measure)
         throw new Error(`'${filepath}' is not a symlink. Move it manually first.`);
     }
 }
 
 function createSymlink(target, linkPath) {
-    // 기존 링크가 있으면 제거
+    // Remove existing link if present
     if (isSymlink(linkPath)) {
         removeSymlinkOrDir(linkPath);
     }
 
     if (IS_WINDOWS) {
-        // Windows: junction 사용 (관리자 권한 불필요)
-        // junction은 절대 경로 필요
+        // Windows: use junction (no admin rights required)
+        // Junction requires absolute paths
         const absTarget = path.resolve(target);
         const absLink = path.resolve(linkPath);
 
         try {
-            // Node.js의 symlinkSync with 'junction' 타입
+            // Node.js symlinkSync with 'junction' type
             fs.symlinkSync(absTarget, absLink, 'junction');
         } catch (err) {
-            // 실패하면 mklink 명령어 시도
+            // Fall back to mklink command on failure
             try {
                 execSync(`mklink /J "${absLink}" "${absTarget}"`, { stdio: 'ignore', shell: true });
             } catch {
@@ -110,13 +110,13 @@ function createSymlink(target, linkPath) {
             }
         }
     } else {
-        // Unix: 상대 경로 심볼릭 링크
+        // Unix: relative path symlink
         const relTarget = path.relative(path.dirname(linkPath), target);
         fs.symlinkSync(relTarget, linkPath);
     }
 }
 
-// 프로파일 디렉토리 경로
+// Profile directory paths
 function getProfileDir(name) {
     return path.join(PROFILES_DIR, name);
 }
@@ -129,7 +129,7 @@ function getClaudeComponentDir(component) {
     return path.join(CLAUDE_DIR, component);
 }
 
-// 프로파일 메타데이터 관리
+// Profile metadata management
 function loadProfilesMeta() {
     return readJSON(PROFILES_JSON) || {
         activeProfile: 'current',
@@ -141,7 +141,7 @@ function saveProfilesMeta(meta) {
     writeJSON(PROFILES_JSON, meta);
 }
 
-// 프로파일 목록
+// List profiles
 function listProfiles() {
     const meta = loadProfilesMeta();
     const profiles = [];
@@ -156,7 +156,7 @@ function listProfiles() {
             const profilePath = path.join(PROFILES_DIR, entry.name, 'profile.json');
             const profile = readJSON(profilePath);
             if (profile) {
-                // 컴포넌트 개수 계산
+                // Count components
                 const componentCounts = {};
                 for (const dir of SYMLINK_DIRS) {
                     const targetDir = getProfileComponentDir(entry.name, dir);
@@ -188,72 +188,72 @@ function listProfiles() {
     return profiles;
 }
 
-// 프로파일 존재 확인
+// Check profile existence
 function profileExists(name) {
     return fs.existsSync(path.join(PROFILES_DIR, name, 'profile.json'));
 }
 
-// 프로파일 로드
+// Load profile
 function loadProfile(name) {
     const profilePath = path.join(PROFILES_DIR, name, 'profile.json');
     return readJSON(profilePath);
 }
 
-// 프로파일 저장
+// Save profile
 function saveProfile(name, profile) {
     const profileDir = path.join(PROFILES_DIR, name);
     ensureDir(profileDir);
     writeJSON(path.join(profileDir, 'profile.json'), profile);
 }
 
-// MCP 서버 설정 로드
+// Load MCP server settings
 function loadMcpServers() {
     const claudeJson = readJSON(CLAUDE_JSON);
     return claudeJson?.mcpServers || {};
 }
 
-// MCP 서버 설정 저장
+// Save MCP server settings
 function saveMcpServers(mcpServers) {
     const claudeJson = readJSON(CLAUDE_JSON) || {};
     claudeJson.mcpServers = mcpServers;
     writeJSON(CLAUDE_JSON, claudeJson);
 }
 
-// 현재 설정 백업
+// Backup current settings
 function backupCurrentSettings() {
     ensureDir(BACKUPS_DIR);
     const timestamp = getTimestamp();
     const backupDir = path.join(BACKUPS_DIR, `backup-${timestamp}`);
     ensureDir(backupDir);
 
-    // settings.json 백업
+    // Backup settings.json
     if (fs.existsSync(SETTINGS_JSON)) {
         fs.copyFileSync(SETTINGS_JSON, path.join(backupDir, 'settings.json'));
     }
 
-    // active-manifest.json 백업
+    // Backup active-manifest.json
     if (fs.existsSync(ACTIVE_MANIFEST)) {
         fs.copyFileSync(ACTIVE_MANIFEST, path.join(backupDir, 'active-manifest.json'));
     }
 
-    // MCP 서버 설정 백업
+    // Backup MCP server settings
     const mcpServers = loadMcpServers();
     writeJSON(path.join(backupDir, 'mcpServers.json'), mcpServers);
 
-    // 메타 정보 저장
+    // Save metadata
     const meta = loadProfilesMeta();
     writeJSON(path.join(backupDir, 'meta.json'), {
         previousProfile: meta.activeProfile,
         backupTime: new Date().toISOString()
     });
 
-    // 오래된 백업 정리 (최대 10개 유지)
+    // Clean old backups (keep max 10)
     cleanOldBackups(10);
 
     return backupDir;
 }
 
-// 오래된 백업 정리
+// Clean old backups
 function cleanOldBackups(maxCount) {
     if (!fs.existsSync(BACKUPS_DIR)) return;
 
@@ -269,7 +269,7 @@ function cleanOldBackups(maxCount) {
     }
 }
 
-// 현재 설정을 프로파일로 내보내기
+// Export current settings to profile
 function exportCurrentToProfile(name, description = '') {
     const settings = readJSON(SETTINGS_JSON) || {};
     const mcpServers = loadMcpServers();
@@ -300,7 +300,7 @@ function exportCurrentToProfile(name, description = '') {
     return profile;
 }
 
-// 심볼릭 링크 전환
+// Switch symlinks
 function switchSymlinks(profileName) {
     const results = [];
     const profileDir = getProfileDir(profileName);
@@ -309,18 +309,18 @@ function switchSymlinks(profileName) {
         const claudeDir = getClaudeComponentDir(dir);
         const targetDir = getProfileComponentDir(profileName, dir);
 
-        // 프로파일에 해당 디렉토리가 없으면 생성
+        // Create directory if not exists in profile
         if (!fs.existsSync(targetDir)) {
             ensureDir(targetDir);
             results.push({ dir, action: 'created_target', path: targetDir });
         }
 
-        // 기존 심볼릭 링크 제거 및 새 링크 생성
+        // Remove existing symlink and create new one
         try {
             if (isSymlink(claudeDir)) {
                 removeSymlinkOrDir(claudeDir);
             } else if (fs.existsSync(claudeDir)) {
-                // 실제 디렉토리가 있으면 에러
+                // Error if real directory exists
                 throw new Error(`'${claudeDir}' is a real directory, not a symlink. Run 'init' first.`);
             }
 
@@ -334,19 +334,19 @@ function switchSymlinks(profileName) {
     return results;
 }
 
-// 프로파일로 스위칭
+// Switch to profile
 function switchToProfile(name) {
     if (!profileExists(name)) {
         throw new Error(`Profile '${name}' does not exist`);
     }
 
-    // 1. 현재 설정 백업
+    // 1. Backup current settings
     const backupPath = backupCurrentSettings();
 
-    // 2. 프로파일 로드
+    // 2. Load profile
     const profile = loadProfile(name);
 
-    // 3. settings.json 업데이트
+    // 3. Update settings.json
     const currentSettings = readJSON(SETTINGS_JSON) || {};
     const newSettings = {
         ...currentSettings,
@@ -359,21 +359,21 @@ function switchToProfile(name) {
         autoUpdatesChannel: profile.settings.autoUpdatesChannel || 'latest'
     };
 
-    // statusLine이 null이면 키 자체를 제거
+    // Remove key if statusLine is null
     if (newSettings.statusLine === null) {
         delete newSettings.statusLine;
     }
 
     writeJSON(SETTINGS_JSON, newSettings);
 
-    // 4. MCP 서버 설정 전환
+    // 4. Switch MCP server settings
     const mcpServers = profile.mcpServers || {};
     saveMcpServers(mcpServers);
 
-    // 5. 심볼릭 링크 전환
+    // 5. Switch symlinks
     const symlinkResults = switchSymlinks(name);
 
-    // 6. active-manifest.json 업데이트 (컴포넌트 격리용)
+    // 6. Update active-manifest.json (for component isolation)
     const manifest = {
         profile: name,
         updatedAt: new Date().toISOString(),
@@ -382,13 +382,13 @@ function switchToProfile(name) {
     };
     writeJSON(ACTIVE_MANIFEST, manifest);
 
-    // 7. profiles.json 업데이트
+    // 7. Update profiles.json
     const meta = loadProfilesMeta();
     meta.activeProfile = name;
     meta.lastSwitch = new Date().toISOString();
     saveProfilesMeta(meta);
 
-    // 프로파일 디렉토리의 컴포넌트 개수 계산
+    // Count components in profile directory
     const componentCounts = {};
     for (const dir of SYMLINK_DIRS) {
         const targetDir = getProfileComponentDir(name, dir);
@@ -418,7 +418,7 @@ function switchToProfile(name) {
     };
 }
 
-// 디렉토리 복사 (재귀)
+// Copy directory recursively
 function copyDirRecursive(src, dest) {
     ensureDir(dest);
     const entries = fs.readdirSync(src, { withFileTypes: true });
@@ -433,118 +433,144 @@ function copyDirRecursive(src, dest) {
     }
 }
 
-// 새 프로파일 생성
+// Copyable items list
+const COPYABLE_ITEMS = {
+    // Settings
+    plugins: 'enabledPlugins',
+    hooks: 'hooks',
+    statusline: 'statusLine',
+    env: 'env',
+    permissions: 'permissions',
+    mcp: 'mcpServers',
+    // Component directories
+    commands: 'commands',
+    skills: 'skills',
+    agents: 'agents'
+};
+
+const SETTING_ITEMS = ['plugins', 'hooks', 'statusline', 'env', 'permissions'];
+const COMPONENT_ITEMS = ['commands', 'skills', 'agents'];
+
+// Create new profile
 function createProfile(name, options = {}) {
     if (profileExists(name)) {
         throw new Error(`Profile '${name}' already exists`);
     }
 
-    // 이름 유효성 검사
+    // Validate name
     if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
         throw new Error('Profile name can only contain letters, numbers, hyphens, and underscores');
     }
 
-    const { fromCurrent = false, description = '', clean = false } = options;
+    const { fromCurrent = false, description = '', clean = false, copy = [] } = options;
+
+    // Parse copy option: 'all' or individual items array
+    let itemsToCopy = [];
+    if (copy.length > 0) {
+        if (copy.includes('all')) {
+            itemsToCopy = Object.keys(COPYABLE_ITEMS);
+        } else {
+            // Filter valid items only
+            itemsToCopy = copy.filter(item => COPYABLE_ITEMS[item]);
+            const invalid = copy.filter(item => !COPYABLE_ITEMS[item]);
+            if (invalid.length > 0) {
+                throw new Error(`Invalid copy items: ${invalid.join(', ')}. Valid items: ${Object.keys(COPYABLE_ITEMS).join(', ')}, all`);
+            }
+        }
+    } else if (fromCurrent) {
+        // --from-current equals all (backward compatible)
+        itemsToCopy = Object.keys(COPYABLE_ITEMS);
+    }
+    // clean or default keeps empty array
 
     let profile;
     const profileDir = getProfileDir(name);
     ensureDir(profileDir);
 
-    if (fromCurrent) {
-        profile = exportCurrentToProfile(name, description || `Copied from current settings`);
+    // Load current settings
+    const currentSettings = readJSON(SETTINGS_JSON) || {};
+    const currentMcpServers = loadMcpServers();
 
-        // 현재 활성 프로파일의 컴포넌트 디렉토리 복사
-        const meta = loadProfilesMeta();
-        const sourceProfile = meta.activeProfile || 'current';
+    // Default empty profile structure
+    profile = {
+        name: name,
+        description: description || (itemsToCopy.length > 0 ? `Copied: ${itemsToCopy.join(', ')}` : 'Custom profile'),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        settings: {
+            enabledPlugins: {},
+            hooks: {},
+            statusLine: null,
+            env: {},
+            permissions: { defaultMode: 'default' },
+            alwaysThinkingEnabled: true,
+            autoUpdatesChannel: 'latest'
+        },
+        mcpServers: {},
+        components: {
+            commands: { mode: clean ? 'whitelist' : 'all', include: [] },
+            skills: { mode: clean ? 'whitelist' : 'all', include: [] },
+            agents: { mode: clean ? 'whitelist' : 'all', include: [] }
+        }
+    };
 
-        for (const dir of SYMLINK_DIRS) {
+    // Copy settings items
+    if (itemsToCopy.includes('plugins')) {
+        profile.settings.enabledPlugins = currentSettings.enabledPlugins || {};
+    }
+    if (itemsToCopy.includes('hooks')) {
+        profile.settings.hooks = currentSettings.hooks || {};
+    }
+    if (itemsToCopy.includes('statusline')) {
+        profile.settings.statusLine = currentSettings.statusLine || null;
+    }
+    if (itemsToCopy.includes('env')) {
+        profile.settings.env = currentSettings.env || {};
+    }
+    if (itemsToCopy.includes('permissions')) {
+        profile.settings.permissions = currentSettings.permissions || { defaultMode: 'default' };
+    }
+    if (itemsToCopy.includes('mcp')) {
+        profile.mcpServers = currentMcpServers;
+    }
+
+    saveProfile(name, profile);
+
+    // Process component directories
+    const meta = loadProfilesMeta();
+    const sourceProfile = meta.activeProfile || 'current';
+
+    for (const dir of SYMLINK_DIRS) {
+        const targetDir = getProfileComponentDir(name, dir);
+
+        if (itemsToCopy.includes(dir)) {
+            // Copy this directory
             const sourceDir = getProfileComponentDir(sourceProfile, dir);
-            const targetDir = getProfileComponentDir(name, dir);
-
             if (fs.existsSync(sourceDir)) {
                 copyDirRecursive(sourceDir, targetDir);
             } else {
                 ensureDir(targetDir);
             }
-        }
-    } else if (clean) {
-        profile = {
-            name: name,
-            description: description || 'Clean profile - no plugins, hooks, MCP, or extensions',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            settings: {
-                enabledPlugins: {},
-                hooks: {},
-                statusLine: null,
-                env: {},
-                permissions: { defaultMode: 'default' },
-                alwaysThinkingEnabled: true,
-                autoUpdatesChannel: 'latest'
-            },
-            mcpServers: {},
-            components: {
-                commands: { mode: 'whitelist', include: [] },
-                skills: { mode: 'whitelist', include: [] },
-                agents: { mode: 'whitelist', include: [] }
-            }
-        };
-        saveProfile(name, profile);
-
-        // 빈 디렉토리 생성 + profile 커맨드 복사 (전환 기능 유지)
-        for (const dir of SYMLINK_DIRS) {
-            ensureDir(getProfileComponentDir(name, dir));
-        }
-        // profile 커맨드는 항상 복사 (전환 기능이 항상 동작하도록)
-        const profileCmdSrc = getProfileComponentDir('current', 'commands/profile');
-        const profileCmdDest = getProfileComponentDir(name, 'commands/profile');
-        if (fs.existsSync(profileCmdSrc)) {
-            copyDirRecursive(profileCmdSrc, profileCmdDest);
-        }
-    } else {
-        profile = {
-            name: name,
-            description: description || 'Custom profile',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            settings: {
-                enabledPlugins: {},
-                hooks: {},
-                statusLine: null,
-                env: {},
-                permissions: { defaultMode: 'default' },
-                alwaysThinkingEnabled: true,
-                autoUpdatesChannel: 'latest'
-            },
-            mcpServers: {},
-            components: {
-                commands: { mode: 'all', include: [] },
-                skills: { mode: 'all', include: [] },
-                agents: { mode: 'all', include: [] }
-            }
-        };
-        saveProfile(name, profile);
-
-        // 빈 디렉토리 생성 + profile 커맨드 복사 (전환 기능 유지)
-        for (const dir of SYMLINK_DIRS) {
-            ensureDir(getProfileComponentDir(name, dir));
-        }
-        // profile 커맨드는 항상 복사 (전환 기능이 항상 동작하도록)
-        const profileCmdSrc = getProfileComponentDir('current', 'commands/profile');
-        const profileCmdDest = getProfileComponentDir(name, 'commands/profile');
-        if (fs.existsSync(profileCmdSrc)) {
-            copyDirRecursive(profileCmdSrc, profileCmdDest);
+        } else {
+            // Create empty directory
+            ensureDir(targetDir);
         }
     }
 
-    // profiles.json 목록 업데이트
-    const meta = loadProfilesMeta();
+    // Always copy profile command (for switch functionality)
+    const profileCmdSrc = getProfileComponentDir(sourceProfile, 'commands/profile');
+    const profileCmdDest = getProfileComponentDir(name, 'commands/profile');
+    if (fs.existsSync(profileCmdSrc) && !fs.existsSync(profileCmdDest)) {
+        copyDirRecursive(profileCmdSrc, profileCmdDest);
+    }
+
+    // Update profiles.json list (meta already loaded above)
     if (!meta.profiles.includes(name)) {
         meta.profiles.push(name);
         saveProfilesMeta(meta);
     }
 
-    // 컴포넌트 개수 계산
+    // Count components
     const componentCounts = {};
     for (const dir of SYMLINK_DIRS) {
         const targetDir = getProfileComponentDir(name, dir);
@@ -564,7 +590,7 @@ function createProfile(name, options = {}) {
     };
 }
 
-// 프로파일 삭제
+// Delete profile
 function deleteProfile(name) {
     if (name === 'current') {
         throw new Error("Cannot delete 'current' profile - it's a system snapshot");
@@ -582,14 +608,14 @@ function deleteProfile(name) {
     const profileDir = path.join(PROFILES_DIR, name);
     fs.rmSync(profileDir, { recursive: true });
 
-    // profiles.json 목록 업데이트
+    // Update profiles.json list
     meta.profiles = meta.profiles.filter(p => p !== name);
     saveProfilesMeta(meta);
 
     return { success: true, message: `Profile '${name}' deleted` };
 }
 
-// 프로파일 이름 변경
+// Rename profile
 function renameProfile(oldName, newName) {
     if (oldName === 'current') {
         throw new Error("Cannot rename 'current' profile - it's a system snapshot");
@@ -603,7 +629,7 @@ function renameProfile(oldName, newName) {
         throw new Error(`Profile '${newName}' already exists`);
     }
 
-    // 이름 유효성 검사
+    // Validate name
     if (!/^[a-zA-Z0-9_-]+$/.test(newName)) {
         throw new Error('Profile name can only contain letters, numbers, hyphens, and underscores');
     }
@@ -613,13 +639,13 @@ function renameProfile(oldName, newName) {
 
     fs.renameSync(oldDir, newDir);
 
-    // profile.json 내의 name 필드 업데이트
+    // Update name field in profile.json
     const profile = loadProfile(newName);
     profile.name = newName;
     profile.updatedAt = new Date().toISOString();
     saveProfile(newName, profile);
 
-    // profiles.json 업데이트
+    // Update profiles.json
     const meta = loadProfilesMeta();
     meta.profiles = meta.profiles.map(p => p === oldName ? newName : p);
     if (meta.activeProfile === oldName) {
@@ -630,7 +656,7 @@ function renameProfile(oldName, newName) {
     return { success: true, message: `Profile renamed from '${oldName}' to '${newName}'` };
 }
 
-// 프로파일 상세 정보
+// Get profile details
 function getProfile(name) {
     if (!profileExists(name)) {
         throw new Error(`Profile '${name}' does not exist`);
@@ -650,7 +676,7 @@ function getProfile(name) {
     };
 }
 
-// 백업에서 복원
+// Restore from backup
 function restoreFromBackup(backupName) {
     const backupDir = path.join(BACKUPS_DIR, backupName);
     if (!fs.existsSync(backupDir)) {
@@ -677,7 +703,7 @@ function restoreFromBackup(backupName) {
     return { success: true, message: `Restored from backup '${backupName}'` };
 }
 
-// 백업 목록
+// List backups
 function listBackups() {
     if (!fs.existsSync(BACKUPS_DIR)) {
         return [];
@@ -698,12 +724,12 @@ function listBackups() {
         });
 }
 
-// 시스템 초기화
+// Initialize system
 function init() {
     ensureDir(PROFILES_DIR);
     ensureDir(BACKUPS_DIR);
 
-    // profiles.json 초기화
+    // Initialize profiles.json
     if (!fs.existsSync(PROFILES_JSON)) {
         saveProfilesMeta({
             activeProfile: 'current',
@@ -714,66 +740,66 @@ function init() {
         });
     }
 
-    // current 프로파일 생성 (현재 설정 스냅샷)
+    // Create current profile (settings snapshot)
     if (!profileExists('current')) {
         exportCurrentToProfile('current', 'Snapshot of current settings');
     }
 
-    // current 프로파일 디렉토리 준비
+    // Prepare current profile directory
     const currentProfileDir = getProfileDir('current');
     ensureDir(currentProfileDir);
 
-    // 기존 디렉토리를 current 프로파일로 이동 및 심볼릭 링크 생성
+    // Move existing directories to current profile and create symlinks
     const symlinkResults = [];
     for (const dir of SYMLINK_DIRS) {
         const claudeDir = getClaudeComponentDir(dir);
         const profileDir = getProfileComponentDir('current', dir);
 
-        // 이미 심볼릭 링크면 건너뜀
+        // Skip if already symlink
         if (isSymlink(claudeDir)) {
             symlinkResults.push({ dir, status: 'already_symlink', target: getSymlinkTarget(claudeDir) });
             continue;
         }
 
-        // 실제 디렉토리가 존재하면 current 프로파일로 이동
+        // Move real directory to current profile if exists
         if (fs.existsSync(claudeDir)) {
-            // profileDir이 이미 존재하면 병합하지 않고 백업
+            // Backup instead of merge if profileDir exists
             if (fs.existsSync(profileDir)) {
                 const backupName = `${profileDir}.backup-${getTimestamp()}`;
                 fs.renameSync(profileDir, backupName);
             }
-            // 디렉토리 이동
+            // Move directory
             fs.renameSync(claudeDir, profileDir);
             symlinkResults.push({ dir, status: 'moved', from: claudeDir, to: profileDir });
         } else {
-            // 디렉토리가 없으면 프로파일에 빈 디렉토리 생성
+            // Create empty directory in profile if not exists
             ensureDir(profileDir);
             symlinkResults.push({ dir, status: 'created_empty', path: profileDir });
         }
 
-        // 심볼릭 링크 생성
+        // Create symlink
         createSymlink(profileDir, claudeDir);
         symlinkResults.push({ dir, status: 'symlink_created', link: claudeDir, target: profileDir });
     }
 
-    // clean 프로파일 생성 (빈 디렉토리들 + profile 커맨드)
+    // Create clean profile (empty directories + profile command)
     if (!profileExists('clean')) {
         const cleanDir = getProfileDir('clean');
         ensureDir(cleanDir);
 
-        // clean 프로파일에 빈 디렉토리 생성
+        // Create empty directories in clean profile
         for (const dir of SYMLINK_DIRS) {
             ensureDir(getProfileComponentDir('clean', dir));
         }
 
-        // profile 커맨드 복사 (전환 기능이 항상 동작하도록)
+        // Copy profile command (for switch functionality)
         const profileCmdSrc = getProfileComponentDir('current', 'commands/profile');
         const profileCmdDest = getProfileComponentDir('clean', 'commands/profile');
         if (fs.existsSync(profileCmdSrc)) {
             copyDirRecursive(profileCmdSrc, profileCmdDest);
         }
 
-        // clean 프로파일 메타데이터 생성
+        // Create clean profile metadata
         const cleanProfile = {
             name: 'clean',
             description: 'Clean slate - no plugins, hooks, MCP, commands, skills, or agents',
@@ -807,7 +833,7 @@ function init() {
     };
 }
 
-// CLI 인터페이스
+// CLI interface
 const command = process.argv[2];
 const args = process.argv.slice(3);
 
@@ -827,10 +853,14 @@ try {
             break;
         case 'create':
             if (!args[0]) throw new Error('Profile name required');
+            // Parse --copy= option
+            const copyArg = args.find(a => a.startsWith('--copy='));
+            const copyItems = copyArg ? copyArg.slice(7).split(',').map(s => s.trim()) : [];
             result = createProfile(args[0], {
                 fromCurrent: args.includes('--from-current'),
                 clean: args.includes('--clean'),
-                description: args.find(a => a.startsWith('--desc='))?.slice(7) || ''
+                description: args.find(a => a.startsWith('--desc='))?.slice(7) || '',
+                copy: copyItems
             });
             break;
         case 'delete':
@@ -862,7 +892,7 @@ try {
             break;
         default:
             console.log(`
-Claude Code Profile Switcher v1.0.0
+Claude Code Profile Switcher v1.1.0
 
 Usage:
   node profile-switcher.js <command> [args]
@@ -872,8 +902,10 @@ Commands:
   list                    List all profiles
   switch <name>           Switch to a profile
   create <name> [opts]    Create new profile
-    --from-current        Copy current settings
-    --clean               Create empty profile
+    --copy=items          Copy specific items (comma-separated)
+                          Items: plugins,hooks,statusline,env,permissions,mcp,commands,skills,agents,all
+    --from-current        Copy all settings (same as --copy=all)
+    --clean               Create empty profile (no settings, whitelist mode)
     --desc="description"  Add description
   delete <name>           Delete a profile
   rename <old> <new>      Rename a profile
@@ -886,6 +918,8 @@ Commands:
 Examples:
   node profile-switcher.js init
   node profile-switcher.js create dev --from-current --desc="Development"
+  node profile-switcher.js create minimal --copy=plugins,commands --desc="Minimal setup"
+  node profile-switcher.js create work --copy=all --desc="Work profile"
   node profile-switcher.js switch clean
   node profile-switcher.js list
 `);

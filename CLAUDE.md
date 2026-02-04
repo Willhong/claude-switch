@@ -1,58 +1,58 @@
 # claude-switch Plugin
 
-프로파일 스위칭 시스템 플러그인입니다.
+Profile switching system plugin for Claude Code.
 
-## 명령어
+## Commands
 
-이 플러그인은 다음 슬래시 커맨드를 제공합니다:
+This plugin provides the following slash commands:
 
-- `/switch:list` - 프로파일 목록 조회
-- `/switch:to <name>` - 프로파일 전환
-- `/switch:create <name> [--from-current] [--clean] [--desc="설명"]` - 새 프로파일 생성
-- `/switch:export [name]` - 현재 설정 내보내기
-- `/switch:get <name>` - 프로파일 상세 정보
-- `/switch:rename <old> <new>` - 프로파일 이름 변경
-- `/switch:delete <name>` - 프로파일 삭제
-- `/switch:backups` - 백업 목록 조회
-- `/switch:restore <backup>` - 백업에서 복원
+- `/switch:list` - List all profiles
+- `/switch:to <name>` - Switch to a profile
+- `/switch:create <name> [--from-current] [--clean] [--desc="description"]` - Create new profile
+- `/switch:export [name]` - Export current settings
+- `/switch:get <name>` - Get profile details
+- `/switch:rename <old> <new>` - Rename a profile
+- `/switch:delete <name>` - Delete a profile
+- `/switch:backups` - List backups
+- `/switch:restore <backup>` - Restore from backup
 
-## 핵심 스크립트
+## Core Script
 
-프로파일 스위칭 로직은 `scripts/profile-switcher.js`에 구현되어 있습니다.
+Profile switching logic is implemented in `scripts/profile-switcher.js`.
 
 ```bash
 node scripts/profile-switcher.js <command> [args]
 ```
 
-지원 명령어:
-- `init` - 시스템 초기화
-- `list` - 프로파일 목록
-- `switch <name>` - 전환
-- `create <name> [opts]` - 생성
-- `delete <name>` - 삭제
-- `rename <old> <new>` - 이름 변경
-- `export [name]` - 내보내기
-- `get <name>` - 상세 정보
-- `backup` - 백업 생성
-- `backups` - 백업 목록
-- `restore <backup>` - 복원
+Supported commands:
+- `init` - Initialize system
+- `list` - List profiles
+- `switch <name>` - Switch profile
+- `create <name> [opts]` - Create profile
+- `delete <name>` - Delete profile
+- `rename <old> <new>` - Rename profile
+- `export [name]` - Export settings
+- `get <name>` - Get details
+- `backup` - Create backup
+- `backups` - List backups
+- `restore <backup>` - Restore
 
-## 중요 경로
+## Important Paths
 
-- 프로파일 저장소: `~/.claude/profiles/`
-- 설정 파일: `~/.claude/settings.json`
-- 백업: `~/.claude/profiles/.backups/`
+- Profile storage: `~/.claude/profiles/`
+- Settings file: `~/.claude/settings.json`
+- Backups: `~/.claude/profiles/.backups/`
 
-## 전환 흐름
+## Switch Flow
 
-1. 현재 설정 자동 백업
-2. 대상 프로파일 로드
-3. `settings.json` 덮어쓰기
-4. `active-manifest.json` 업데이트
-5. 사용자에게 재시작 안내
+1. Auto-backup current settings
+2. Load target profile
+3. Overwrite `settings.json`
+4. Update `active-manifest.json`
+5. Prompt user to restart
 
-## 주의사항
+## Notes
 
-- 전환 후 Claude Code 재시작 필요
-- `current` 프로파일은 시스템 예약 (삭제/이름변경 불가)
-- 백업은 최대 10개 유지
+- Restart Claude Code after switching
+- `current` profile is system-reserved (cannot delete/rename)
+- Maximum 10 backups retained
