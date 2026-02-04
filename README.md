@@ -11,16 +11,23 @@ Claude Code profile switching system - easily manage and switch between multiple
 
 ## Installation
 
-### Install as Plugin
+### Add Marketplace & Install
+
+```
+/plugin marketplace add Willhong/claude-switch
+/plugin install claude-switch
+```
+
+### Install from GitHub URL
 
 ```bash
-claude plugins:add claude-switch
+claude plugins:add https://github.com/Willhong/claude-switch
 ```
 
 ### Manual Installation
 
 ```bash
-git clone https://github.com/hong/claude-switch.git ~/.claude/plugins/claude-switch
+git clone https://github.com/Willhong/claude-switch.git ~/.claude/plugins/claude-switch
 cd ~/.claude/plugins/claude-switch
 node scripts/profile-switcher.js init
 ```
