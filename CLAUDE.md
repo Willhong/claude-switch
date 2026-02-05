@@ -6,15 +6,15 @@ Profile switching system plugin for Claude Code.
 
 This plugin provides the following slash commands:
 
-- `/switch:list` - List all profiles
-- `/switch:to <name>` - Switch to a profile
-- `/switch:create <name> [--from-current] [--clean] [--desc="description"]` - Create new profile
-- `/switch:export [name]` - Export current settings
-- `/switch:get <name>` - Get profile details
-- `/switch:rename <old> <new>` - Rename a profile
-- `/switch:delete <name>` - Delete a profile
-- `/switch:backups` - List backups
-- `/switch:restore <backup>` - Restore from backup
+- `/claude-switch:list` - List all profiles
+- `/claude-switch:to <name>` - Switch to a profile
+- `/claude-switch:create <name> [--from-current] [--clean] [--desc="description"]` - Create new profile
+- `/claude-switch:export [name]` - Export current settings
+- `/claude-switch:get <name>` - Get profile details
+- `/claude-switch:rename <old> <new>` - Rename a profile
+- `/claude-switch:delete <name>` - Delete a profile
+- `/claude-switch:backups` - List backups
+- `/claude-switch:restore <backup>` - Restore from backup
 
 ## Core Script
 
