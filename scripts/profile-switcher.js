@@ -632,6 +632,9 @@ function getGitRepoUrl() {
     if (entry?.source?.source === 'github' && entry?.source?.repo) {
         return `https://github.com/${entry.source.repo}.git`;
     }
+    if (entry?.source?.source === 'git' && entry?.source?.url) {
+        return entry.source.url;
+    }
     return null;
 }
 
