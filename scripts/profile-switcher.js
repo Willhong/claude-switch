@@ -1149,6 +1149,10 @@ try {
             if (!args[0]) throw new Error('Backup name required');
             result = restoreFromBackup(args[0]);
             break;
+        case 'version':
+            const selfPkg = readJSON(path.join(path.dirname(__dirname), 'package.json')) || {};
+            result = { version: selfPkg.version || 'unknown', source: __dirname };
+            break;
         case 'update':
             result = updatePluginCache();
             if (!result) {
@@ -1182,6 +1186,7 @@ Commands:
   backups                 List all backups
   restore <backup>        Restore from backup
   update                  Sync source to plugin cache
+  version                 Show current version
 
 Examples:
   node profile-switcher.js init
