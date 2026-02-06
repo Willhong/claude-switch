@@ -51,6 +51,7 @@ node scripts/profile-switcher.js init
 | `/claude-switch:delete <name>` | Delete a profile |
 | `/claude-switch:backups` | List backups |
 | `/claude-switch:restore <backup>` | Restore from backup |
+| `/claude-switch:update` | Sync source to plugin cache |
 
 ### Create Options
 

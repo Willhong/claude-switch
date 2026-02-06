@@ -15,6 +15,7 @@ This plugin provides the following slash commands:
 - `/claude-switch:delete <name>` - Delete a profile
 - `/claude-switch:backups` - List backups
 - `/claude-switch:restore <backup>` - Restore from backup
+- `/claude-switch:update` - Sync source to plugin cache
 
 ## Core Script
 
@@ -36,6 +37,7 @@ Supported commands:
 - `backup` - Create backup
 - `backups` - List backups
 - `restore <backup>` - Restore
+- `update` - Sync source to plugin cache
 
 ## Important Paths
 

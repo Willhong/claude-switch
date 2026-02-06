@@ -1115,6 +1115,14 @@ try {
             if (!args[0]) throw new Error('Backup name required');
             result = restoreFromBackup(args[0]);
             break;
+        case 'update':
+            result = updatePluginCache();
+            if (!result) {
+                throw new Error('Cannot update: either running from plugin cache (no source to sync from) or plugin cache not found');
+            }
+            result.success = true;
+            result.message = `Plugin cache updated (${result.updated.length} version(s): ${result.updated.join(', ')})`;
+            break;
         default:
             console.log(`
 Claude Code Profile Switcher v1.5.0
@@ -1139,6 +1147,7 @@ Commands:
   backup                  Create backup of current settings
   backups                 List all backups
   restore <backup>        Restore from backup
+  update                  Sync source to plugin cache
 
 Examples:
   node profile-switcher.js init
