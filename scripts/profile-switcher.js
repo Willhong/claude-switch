@@ -542,7 +542,7 @@ function switchToProfile(name) {
     });
 }
 
-// Sync source files to all plugin cache versions
+// Sync source files to plugin cache and update registry
 function syncToCache(sourceDir) {
     const pluginCacheBase = path.join(CLAUDE_DIR, 'plugins', 'cache', 'claude-switch', 'claude-switch');
     if (!fs.existsSync(pluginCacheBase)) return null;
@@ -554,7 +554,9 @@ function syncToCache(sourceDir) {
     if (versions.length === 0) return null;
 
     const pkg = readJSON(path.join(sourceDir, 'package.json'));
+    const newVersion = pkg?.version || 'unknown';
 
+    // Sync files to all existing version dirs
     for (const ver of versions) {
         const cacheDir = path.join(pluginCacheBase, ver);
         for (const dir of ['scripts', 'commands']) {
@@ -573,7 +575,31 @@ function syncToCache(sourceDir) {
         }
     }
 
-    return { updated: versions, version: pkg?.version || 'unknown' };
+    // Rename latest version dir to match actual version
+    const latestDir = versions.sort().pop();
+    const renamedFrom = latestDir;
+    if (latestDir !== newVersion) {
+        const oldPath = path.join(pluginCacheBase, latestDir);
+        const newPath = path.join(pluginCacheBase, newVersion);
+        if (!fs.existsSync(newPath)) {
+            fs.renameSync(oldPath, newPath);
+        }
+    }
+
+    // Update installed_plugins.json with new version and path
+    const installedPath = path.join(CLAUDE_DIR, 'plugins', 'installed_plugins.json');
+    const installed = readJSON(installedPath);
+    if (installed?.plugins?.['claude-switch@claude-switch']) {
+        const entries = installed.plugins['claude-switch@claude-switch'];
+        for (const entry of entries) {
+            entry.version = newVersion;
+            entry.installPath = path.join(pluginCacheBase, newVersion);
+            entry.lastUpdated = new Date().toISOString();
+        }
+        writeJSON(installedPath, installed);
+    }
+
+    return { updated: versions, version: newVersion, renamedFrom };
 }
 
 // Find git repo URL from marketplace config
