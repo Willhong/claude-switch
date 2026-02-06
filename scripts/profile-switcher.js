@@ -3,7 +3,7 @@
  * Claude Code Profile Switcher
  * Profile CRUD and switching logic
  *
- * @version 1.6.5
+ * @version 1.7.0
  * @author Hong
  */
 
@@ -16,6 +16,7 @@ const PROFILES_DIR = path.join(CLAUDE_DIR, 'profiles');
 const BACKUPS_DIR = path.join(PROFILES_DIR, '.backups');
 const PROFILES_JSON = path.join(PROFILES_DIR, 'profiles.json');
 const SETTINGS_JSON = path.join(CLAUDE_DIR, 'settings.json');
+const CLAUDE_MD = path.join(CLAUDE_DIR, 'CLAUDE.md');
 const ACTIVE_MANIFEST = path.join(CLAUDE_DIR, 'active-manifest.json');
 // MCP settings stored in ~/.claude.json
 const CLAUDE_JSON = path.join(process.env.HOME || process.env.USERPROFILE, '.claude.json');
@@ -416,6 +417,11 @@ function backupCurrentSettings() {
         fs.copyFileSync(ACTIVE_MANIFEST, path.join(backupDir, 'active-manifest.json'));
     }
 
+    // Backup CLAUDE.md
+    if (fs.existsSync(CLAUDE_MD)) {
+        fs.copyFileSync(CLAUDE_MD, path.join(backupDir, 'CLAUDE.md'));
+    }
+
     // Backup MCP server settings
     const mcpServers = loadMcpServers();
     writeJSON(path.join(backupDir, 'mcpServers.json'), mcpServers);
@@ -475,6 +481,14 @@ function syncCurrentSettingsToActiveProfile() {
 
     profile.updatedAt = new Date().toISOString();
     saveProfile(activeProfileName, profile);
+
+    // Sync CLAUDE.md
+    const profileDir = getProfileDir(activeProfileName);
+    try {
+        if (fs.existsSync(CLAUDE_MD)) {
+            fs.copyFileSync(CLAUDE_MD, path.join(profileDir, 'CLAUDE.md'));
+        }
+    } catch (e) { /* non-fatal */ }
 }
 
 // Export current settings to profile
@@ -505,6 +519,12 @@ function exportCurrentToProfile(name, description = '') {
     };
 
     saveProfile(name, profile);
+
+    // Capture CLAUDE.md
+    if (fs.existsSync(CLAUDE_MD)) {
+        fs.copyFileSync(CLAUDE_MD, path.join(getProfileDir(name), 'CLAUDE.md'));
+    }
+
     return profile;
 }
 
@@ -569,6 +589,7 @@ function switchToProfile(name) {
         const origSettings = fs.existsSync(SETTINGS_JSON) ? fs.readFileSync(SETTINGS_JSON, 'utf-8') : null;
         const origClaudeJson = fs.existsSync(CLAUDE_JSON) ? fs.readFileSync(CLAUDE_JSON, 'utf-8') : null;
         const origManifest = fs.existsSync(ACTIVE_MANIFEST) ? fs.readFileSync(ACTIVE_MANIFEST, 'utf-8') : null;
+        const origClaudeMd = fs.existsSync(CLAUDE_MD) ? fs.readFileSync(CLAUDE_MD, 'utf-8') : null;
         const origSymlinkTargets = {};
         for (const dir of SYMLINK_DIRS) {
             const claudeDir = getClaudeComponentDir(dir);
@@ -582,6 +603,8 @@ function switchToProfile(name) {
                 if (origSettings !== null) fs.writeFileSync(SETTINGS_JSON, origSettings, 'utf-8');
                 if (origClaudeJson !== null) fs.writeFileSync(CLAUDE_JSON, origClaudeJson, 'utf-8');
                 if (origManifest !== null) fs.writeFileSync(ACTIVE_MANIFEST, origManifest, 'utf-8');
+                if (origClaudeMd !== null) fs.writeFileSync(CLAUDE_MD, origClaudeMd, 'utf-8');
+                else if (fs.existsSync(CLAUDE_MD)) fs.unlinkSync(CLAUDE_MD);
                 // Restore symlinks
                 for (const dir of SYMLINK_DIRS) {
                     const claudeDir = getClaudeComponentDir(dir);
@@ -620,6 +643,14 @@ function switchToProfile(name) {
             }
 
             writeJSON(SETTINGS_JSON, newSettings);
+
+            // 3.5. Switch CLAUDE.md
+            const profileClaudeMd = path.join(getProfileDir(name), 'CLAUDE.md');
+            if (fs.existsSync(profileClaudeMd)) {
+                fs.copyFileSync(profileClaudeMd, CLAUDE_MD);
+            } else if (fs.existsSync(CLAUDE_MD)) {
+                fs.unlinkSync(CLAUDE_MD);
+            }
 
             // 4. Switch MCP server settings
             const mcpServers = profile.mcpServers || {};
@@ -1096,6 +1127,12 @@ function spread(type, name, args) {
             if (sourceValue == null) {
                 throw new Error(`Permissions not set in active profile '${activeProfile}'`);
             }
+        } else if (type === 'claudemd') {
+            const sourceClaudeMd = path.join(getProfileDir(activeProfile), 'CLAUDE.md');
+            if (!fs.existsSync(sourceClaudeMd)) {
+                throw new Error(`CLAUDE.md not found in active profile '${activeProfile}'`);
+            }
+            sourceValue = sourceClaudeMd; // store path for file copy
         }
     }
 
@@ -1202,6 +1239,22 @@ function spread(type, name, args) {
                             continue;
                         }
                         profile.settings.permissions = clonedValue;
+                    } else if (type === 'claudemd') {
+                        // sourceValue is the source file path for claudemd
+                        const targetClaudeMd = path.join(getProfileDir(profileName), 'CLAUDE.md');
+                        exists = fs.existsSync(targetClaudeMd);
+                        if (exists && !force) {
+                            results.push({ profile: profileName, status: 'skipped', note: 'Already exists (use --force to overwrite)' });
+                            continue;
+                        }
+                        fs.copyFileSync(sourceValue, targetClaudeMd);
+
+                        results.push({
+                            profile: profileName,
+                            status: exists ? 'overwritten' : 'copied',
+                            note: exists ? 'Overwritten' : 'Copied'
+                        });
+                        continue; // skip the JSON save below — claudemd is a file, not a settings field
                     }
 
                     profile.updatedAt = new Date().toISOString();
@@ -1244,6 +1297,7 @@ const COPYABLE_ITEMS = {
     env: 'env',
     permissions: 'permissions',
     mcp: 'mcpServers',
+    claudemd: 'CLAUDE.md',
     // Component directories
     commands: 'commands',
     skills: 'skills',
@@ -1256,7 +1310,7 @@ const COMPONENT_ITEMS = ['commands', 'skills', 'agents'];
 // Spread command types
 const SPREAD_COMPONENT_TYPES = ['commands', 'skills', 'agents'];
 const SPREAD_KEYED_TYPES = ['hooks', 'mcp', 'env'];
-const SPREAD_VALUE_TYPES = ['statusline', 'permissions'];
+const SPREAD_VALUE_TYPES = ['statusline', 'permissions', 'claudemd'];
 const ALL_SPREAD_TYPES = [...SPREAD_COMPONENT_TYPES, ...SPREAD_KEYED_TYPES, ...SPREAD_VALUE_TYPES];
 
 // Create new profile (with locking)
@@ -1347,6 +1401,13 @@ function _createProfile(name, options = {}) {
     }
 
     saveProfile(name, profile);
+
+    // Copy CLAUDE.md if requested
+    if (itemsToCopy.includes('claudemd')) {
+        if (fs.existsSync(CLAUDE_MD)) {
+            fs.copyFileSync(CLAUDE_MD, path.join(profileDir, 'CLAUDE.md'));
+        }
+    }
 
     // Process component directories
     const meta = loadProfilesMeta();
@@ -1766,7 +1827,7 @@ try {
             result = uninstallAll(args[0], args.slice(1));
             break;
         case 'spread': {
-            if (!args[0]) throw new Error('Type required (commands, skills, agents, hooks, mcp, env, statusline, permissions)');
+            if (!args[0]) throw new Error('Type required (commands, skills, agents, hooks, mcp, env, statusline, permissions, claudemd)');
             const spreadType = args[0];
             if (!ALL_SPREAD_TYPES.includes(spreadType)) {
                 throw new Error(`Invalid type '${spreadType}'. Valid: ${ALL_SPREAD_TYPES.join(', ')}`);
@@ -1828,7 +1889,7 @@ try {
             break;
         default:
             console.log(`
-Claude Code Profile Switcher v1.6.5
+Claude Code Profile Switcher v1.7.0
 
 Usage:
   node profile-switcher.js <command> [args]
@@ -1839,7 +1900,7 @@ Commands:
   switch <name>           Switch to a profile
   create <name> [opts]    Create new profile
     --copy=items          Copy specific items (comma-separated)
-                          Items: plugins,hooks,statusline,env,permissions,mcp,commands,skills,agents,all
+                          Items: plugins,hooks,statusline,env,permissions,mcp,claudemd,commands,skills,agents,all
     --from-current        Copy all settings (same as --copy=all)
     --clean               Create empty profile (no settings, whitelist mode)
     --desc="description"  Add description
@@ -1867,6 +1928,7 @@ Commands:
     Types (no name):
       statusline              Copy statusline config
       permissions             Copy permissions config
+      claudemd                Copy CLAUDE.md file
     Options:
       --all                   Target all other profiles
       --profiles=a,b          Target specific profiles
