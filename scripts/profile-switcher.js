@@ -3,7 +3,7 @@
  * Claude Code Profile Switcher
  * Profile CRUD and switching logic
  *
- * @version 1.3.0
+ * @version 1.4.0
  * @author Hong
  */
 
@@ -27,6 +27,7 @@ const PROFILE_NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
 const LOCK_FILE = path.join(PROFILES_DIR, '.lock');
 const LOCK_TIMEOUT_MS = 30000; // 30 seconds
 const LOCK_STALE_MS = 60000; // 1 minute - consider lock stale after this
+const SELF_PLUGIN_KEY = 'claude-switch@claude-switch';
 
 // Utility functions
 function ensureDir(dir) {
@@ -460,6 +461,9 @@ function switchToProfile(name) {
                 autoUpdatesChannel: profile.settings.autoUpdatesChannel || 'latest'
             };
 
+            // Always keep claude-switch plugin enabled (self-preservation)
+            newSettings.enabledPlugins[SELF_PLUGIN_KEY] = true;
+
             if (newSettings.statusLine === null) {
                 delete newSettings.statusLine;
             }
@@ -614,7 +618,7 @@ function _createProfile(name, options = {}) {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         settings: {
-            enabledPlugins: {},
+            enabledPlugins: { [SELF_PLUGIN_KEY]: true },
             hooks: {},
             statusLine: null,
             env: {},
@@ -977,7 +981,7 @@ function _init() {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             settings: {
-                enabledPlugins: {},
+                enabledPlugins: { [SELF_PLUGIN_KEY]: true },
                 hooks: {},
                 statusLine: null,
                 env: {},
@@ -1063,7 +1067,7 @@ try {
             break;
         default:
             console.log(`
-Claude Code Profile Switcher v1.3.0
+Claude Code Profile Switcher v1.4.0
 
 Usage:
   node profile-switcher.js <command> [args]
