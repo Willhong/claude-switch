@@ -7,7 +7,7 @@ Profile switching system plugin for Claude Code.
 This plugin provides the following slash commands:
 
 - `/claude-switch:list` - List all profiles
-- `/claude-switch:to <name>` - Switch to a profile
+- `/claude-switch:switch <name>` - Switch to a profile
 - `/claude-switch:create <name> [--from-current] [--clean] [--desc="description"]` - Create new profile
 - `/claude-switch:export [name]` - Export current settings
 - `/claude-switch:get <name>` - Get profile details

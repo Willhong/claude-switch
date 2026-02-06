@@ -43,7 +43,7 @@ node scripts/profile-switcher.js init
 | Command | Description |
 |---------|-------------|
 | `/claude-switch:list` | List all profiles |
-| `/claude-switch:to <name>` | Switch to a profile |
+| `/claude-switch:switch <name>` | Switch to a profile |
 | `/claude-switch:create <name>` | Create new profile |
 | `/claude-switch:export [name]` | Export current settings |
 | `/claude-switch:get <name>` | Get profile details |
