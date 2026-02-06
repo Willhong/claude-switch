@@ -3,7 +3,7 @@
  * Claude Code Profile Switcher
  * Profile CRUD and switching logic
  *
- * @version 1.6.3
+ * @version 1.6.4
  * @author Hong
  */
 
@@ -189,6 +189,48 @@ function createSymlink(target, linkPath) {
         const relTarget = path.relative(path.dirname(linkPath), target);
         fs.symlinkSync(relTarget, linkPath);
     }
+}
+
+// Atomically replace a junction on Windows using rename-swap pattern.
+// rename() works on busy junctions (handles reference the FS object, not the name),
+// while rmdir() fails with EBUSY when handles are open through the junction.
+function replaceJunction(linkPath, newTarget) {
+    const absTarget = path.resolve(newTarget);
+    const absLink = path.resolve(linkPath);
+    const tempLink = absLink + '._switching';
+    const oldLink = absLink + '._old';
+
+    // Clean up leftover temp files from previous failed attempts
+    for (const tmp of [tempLink, oldLink]) {
+        if (isSymlink(tmp)) {
+            try { fs.rmdirSync(tmp); } catch { try { fs.unlinkSync(tmp); } catch {} }
+        }
+    }
+
+    // 1. Create new junction at temp path
+    fs.symlinkSync(absTarget, tempLink, 'junction');
+
+    try {
+        // 2. Rename current junction to .old (works even with open handles)
+        fs.renameSync(absLink, oldLink);
+    } catch (err) {
+        // Cleanup temp and re-throw
+        try { fs.rmdirSync(tempLink); } catch {}
+        throw err;
+    }
+
+    try {
+        // 3. Rename temp junction to real name
+        fs.renameSync(tempLink, absLink);
+    } catch (err) {
+        // Rollback: restore old junction
+        try { fs.renameSync(oldLink, absLink); } catch {}
+        try { fs.rmdirSync(tempLink); } catch {}
+        throw err;
+    }
+
+    // 4. Best-effort cleanup of old junction
+    try { fs.rmdirSync(oldLink); } catch {}
 }
 
 // Profile directory paths
@@ -453,16 +495,22 @@ function switchSymlinks(profileName) {
             results.push({ dir, action: 'created_target', path: targetDir });
         }
 
-        // Remove existing symlink and create new one
+        // Replace existing symlink or create new one
         try {
             if (isSymlink(claudeDir)) {
-                removeSymlinkOrDir(claudeDir);
+                if (IS_WINDOWS) {
+                    // Atomic rename-swap avoids EBUSY when handles are open
+                    replaceJunction(claudeDir, targetDir);
+                } else {
+                    removeSymlinkOrDir(claudeDir);
+                    createSymlink(targetDir, claudeDir);
+                }
             } else if (fs.existsSync(claudeDir)) {
                 // Error if real directory exists
                 throw new Error(`'${claudeDir}' is a real directory, not a symlink. Run 'init' first.`);
+            } else {
+                createSymlink(targetDir, claudeDir);
             }
-
-            createSymlink(targetDir, claudeDir);
             results.push({ dir, action: 'switched', link: claudeDir, target: targetDir });
         } catch (err) {
             results.push({ dir, action: 'error', error: err.message });
@@ -1745,7 +1793,7 @@ try {
             break;
         default:
             console.log(`
-Claude Code Profile Switcher v1.6.3
+Claude Code Profile Switcher v1.6.4
 
 Usage:
   node profile-switcher.js <command> [args]
