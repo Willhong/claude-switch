@@ -1,6 +1,6 @@
 {
   "name": "claude-switch",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "description": "Profile switching system for Claude Code - manage multiple configurations",
   "author": {
     "name": "Hong"

@@ -3,7 +3,7 @@
  * Claude Code Profile Switcher
  * Profile CRUD and switching logic
  *
- * @version 1.7.1
+ * @version 1.7.2
  * @author Hong
  */
 
@@ -480,13 +480,18 @@ function syncCurrentSettingsToActiveProfile() {
     profile.mcpServers = currentMcpServers;
 
     profile.updatedAt = new Date().toISOString();
-    saveProfile(activeProfileName, profile);
+    try {
+        saveProfile(activeProfileName, profile);
+    } catch (e) { /* non-fatal: settings sync failure should not block CLAUDE.md sync */ }
 
-    // Sync CLAUDE.md
+    // Sync CLAUDE.md (runs regardless of settings sync success)
     const profileDir = getProfileDir(activeProfileName);
     try {
+        const profileClaudeMd = path.join(profileDir, 'CLAUDE.md');
         if (fs.existsSync(CLAUDE_MD)) {
-            fs.copyFileSync(CLAUDE_MD, path.join(profileDir, 'CLAUDE.md'));
+            fs.copyFileSync(CLAUDE_MD, profileClaudeMd);
+        } else if (fs.existsSync(profileClaudeMd)) {
+            fs.unlinkSync(profileClaudeMd);
         }
     } catch (e) { /* non-fatal */ }
 }
@@ -521,8 +526,11 @@ function exportCurrentToProfile(name, description = '') {
     saveProfile(name, profile);
 
     // Capture CLAUDE.md
+    const profileClaudeMd = path.join(getProfileDir(name), 'CLAUDE.md');
     if (fs.existsSync(CLAUDE_MD)) {
-        fs.copyFileSync(CLAUDE_MD, path.join(getProfileDir(name), 'CLAUDE.md'));
+        fs.copyFileSync(CLAUDE_MD, profileClaudeMd);
+    } else if (fs.existsSync(profileClaudeMd)) {
+        fs.unlinkSync(profileClaudeMd);
     }
 
     return profile;
@@ -1899,7 +1907,7 @@ try {
             break;
         default:
             console.log(`
-Claude Code Profile Switcher v1.7.1
+Claude Code Profile Switcher v1.7.2
 
 Usage:
   node profile-switcher.js <command> [args]
