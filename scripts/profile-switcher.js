@@ -1201,7 +1201,37 @@ try {
             break;
         case 'version':
             const selfPkg = readJSON(path.join(path.dirname(__dirname), 'package.json')) || {};
-            result = { version: selfPkg.version || 'unknown', source: __dirname };
+            const versionMeta = loadProfilesMeta();
+            const profileVersions = [];
+            if (fs.existsSync(PROFILES_DIR)) {
+                const entries = fs.readdirSync(PROFILES_DIR, { withFileTypes: true });
+                for (const entry of entries) {
+                    if (entry.isDirectory() && !entry.name.startsWith('.')) {
+                        const profile = readJSON(path.join(PROFILES_DIR, entry.name, 'profile.json'));
+                        if (profile) {
+                            const enabled = !!profile.settings?.enabledPlugins?.[SELF_PLUGIN_KEY];
+                            profileVersions.push({
+                                profile: entry.name,
+                                active: versionMeta.activeProfile === entry.name,
+                                pluginEnabled: enabled
+                            });
+                        }
+                    }
+                }
+            }
+            // Gather version sources
+            const installedInfo = readJSON(path.join(CLAUDE_DIR, 'plugins', 'installed_plugins.json'));
+            const installedEntry = installedInfo?.plugins?.[SELF_PLUGIN_KEY]?.[0];
+            const mktPluginJson = readJSON(path.join(CLAUDE_DIR, 'plugins', 'marketplaces', 'claude-switch', '.claude-plugin', 'plugin.json'));
+            result = {
+                version: selfPkg.version || 'unknown',
+                source: __dirname,
+                registry: {
+                    installed: installedEntry?.version || 'unknown',
+                    marketplace: mktPluginJson?.version || 'unknown'
+                },
+                profiles: profileVersions
+            };
             break;
         case 'update':
             result = updatePluginCache();
