@@ -3,7 +3,7 @@
  * Claude Code Profile Switcher
  * Profile CRUD and switching logic
  *
- * @version 1.4.0
+ * @version 1.5.0
  * @author Hong
  */
 
@@ -510,7 +510,7 @@ function switchToProfile(name) {
                 }
             }
 
-            return {
+            const result = {
                 success: true,
                 profile: name,
                 backup: backupPath,
@@ -526,12 +526,62 @@ function switchToProfile(name) {
                 symlinks: symlinkResults,
                 message: `Switched to profile '${name}'. Please restart Claude Code for changes to take effect.`
             };
+
+            // Update plugin cache if running from source
+            const cacheUpdate = updatePluginCache();
+            if (cacheUpdate) {
+                result.cacheUpdated = cacheUpdate;
+            }
+
+            return result;
         } catch (err) {
             // Rollback all changes on failure
             rollback();
             throw new Error(`Switch failed (rolled back): ${err.message}`);
         }
     });
+}
+
+// Update plugin cache from source directory
+function updatePluginCache() {
+    const scriptDir = __dirname;
+    const projectDir = path.dirname(scriptDir);
+
+    // Don't self-update if running from plugin cache
+    if (projectDir.includes(path.join('plugins', 'cache'))) return null;
+
+    const pkg = readJSON(path.join(projectDir, 'package.json'));
+    if (!pkg?.name || pkg.name !== 'claude-switch') return null;
+
+    const pluginCacheBase = path.join(CLAUDE_DIR, 'plugins', 'cache', 'claude-switch', 'claude-switch');
+    if (!fs.existsSync(pluginCacheBase)) return null;
+
+    const versions = fs.readdirSync(pluginCacheBase).filter(v => {
+        try { return fs.statSync(path.join(pluginCacheBase, v)).isDirectory(); } catch { return false; }
+    });
+
+    if (versions.length === 0) return null;
+
+    // Update all cached versions with current source
+    for (const ver of versions) {
+        const cacheDir = path.join(pluginCacheBase, ver);
+        for (const dir of ['scripts', 'commands']) {
+            const src = path.join(projectDir, dir);
+            const dest = path.join(cacheDir, dir);
+            if (fs.existsSync(src)) {
+                if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true });
+                copyDirRecursive(src, dest);
+            }
+        }
+        for (const file of ['package.json', 'CLAUDE.md', 'README.md', 'LICENSE']) {
+            const src = path.join(projectDir, file);
+            if (fs.existsSync(src)) {
+                fs.copyFileSync(src, path.join(cacheDir, file));
+            }
+        }
+    }
+
+    return { updated: versions, version: pkg.version };
 }
 
 // Copy directory recursively
@@ -1067,7 +1117,7 @@ try {
             break;
         default:
             console.log(`
-Claude Code Profile Switcher v1.4.0
+Claude Code Profile Switcher v1.5.0
 
 Usage:
   node profile-switcher.js <command> [args]
