@@ -603,6 +603,20 @@ function syncToCache(sourceDir, options = {}) {
         writeJSON(installedPath, installed);
     }
 
+    // Update marketplace cache version to prevent stale dir recreation
+    const marketplacePluginDir = path.join(CLAUDE_DIR, 'plugins', 'marketplaces', 'claude-switch', '.claude-plugin');
+    const marketplaceJson = readJSON(path.join(marketplacePluginDir, 'marketplace.json'));
+    if (marketplaceJson) {
+        marketplaceJson.version = newVersion;
+        if (marketplaceJson.metadata) marketplaceJson.metadata.version = newVersion;
+        writeJSON(path.join(marketplacePluginDir, 'marketplace.json'), marketplaceJson);
+    }
+    const pluginJson = readJSON(path.join(marketplacePluginDir, 'plugin.json'));
+    if (pluginJson) {
+        pluginJson.version = newVersion;
+        writeJSON(path.join(marketplacePluginDir, 'plugin.json'), pluginJson);
+    }
+
     return { version: newVersion, removed };
 }
 
