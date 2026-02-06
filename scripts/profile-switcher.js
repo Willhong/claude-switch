@@ -3,7 +3,7 @@
  * Claude Code Profile Switcher
  * Profile CRUD and switching logic
  *
- * @version 1.6.4
+ * @version 1.6.5
  * @author Hong
  */
 
@@ -449,6 +449,34 @@ function cleanOldBackups(maxCount) {
     }
 }
 
+// Sync current settings.json back to active profile before switching away
+function syncCurrentSettingsToActiveProfile() {
+    const meta = loadProfilesMeta();
+    const activeProfileName = meta.activeProfile;
+    if (!activeProfileName || !profileExists(activeProfileName)) return;
+
+    const profile = loadProfile(activeProfileName);
+    if (!profile) return;
+
+    const currentSettings = readJSON(SETTINGS_JSON) || {};
+    const currentMcpServers = loadMcpServers();
+
+    // Sync settings fields from live settings.json into the profile
+    profile.settings.enabledPlugins = currentSettings.enabledPlugins || {};
+    profile.settings.hooks = currentSettings.hooks || {};
+    profile.settings.statusLine = currentSettings.statusLine || null;
+    profile.settings.env = currentSettings.env || {};
+    profile.settings.permissions = currentSettings.permissions || { defaultMode: 'default' };
+    profile.settings.alwaysThinkingEnabled = currentSettings.alwaysThinkingEnabled ?? true;
+    profile.settings.autoUpdatesChannel = currentSettings.autoUpdatesChannel || 'latest';
+
+    // Sync MCP servers
+    profile.mcpServers = currentMcpServers;
+
+    profile.updatedAt = new Date().toISOString();
+    saveProfile(activeProfileName, profile);
+}
+
 // Export current settings to profile
 function exportCurrentToProfile(name, description = '') {
     const settings = readJSON(SETTINGS_JSON) || {};
@@ -529,6 +557,13 @@ function switchToProfile(name) {
     return withLock(() => {
         // 1. Backup current settings
         const backupPath = backupCurrentSettings();
+
+        // 1.5. Sync current settings.json to active profile before switching away
+        try {
+            syncCurrentSettingsToActiveProfile();
+        } catch (e) {
+            // Non-fatal: continue with switch even if sync fails
+        }
 
         // Save originals for rollback
         const origSettings = fs.existsSync(SETTINGS_JSON) ? fs.readFileSync(SETTINGS_JSON, 'utf-8') : null;
@@ -1793,7 +1828,7 @@ try {
             break;
         default:
             console.log(`
-Claude Code Profile Switcher v1.6.4
+Claude Code Profile Switcher v1.6.5
 
 Usage:
   node profile-switcher.js <command> [args]
