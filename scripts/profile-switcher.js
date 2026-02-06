@@ -3,7 +3,7 @@
  * Claude Code Profile Switcher
  * Profile CRUD and switching logic
  *
- * @version 1.2.0
+ * @version 1.3.0
  * @author Hong
  */
 
@@ -831,7 +831,7 @@ function _restoreFromBackup(backupName) {
     return { success: true, message: `Restored from backup '${backupName}'` };
 }
 
-// List backups
+// List backups (with detailed info from backup contents)
 function listBackups() {
     if (!fs.existsSync(BACKUPS_DIR)) {
         return [];
@@ -842,12 +842,51 @@ function listBackups() {
         .sort()
         .reverse()
         .map(name => {
-            const metaPath = path.join(BACKUPS_DIR, name, 'meta.json');
-            const meta = readJSON(metaPath);
+            const backupDir = path.join(BACKUPS_DIR, name);
+            const meta = readJSON(path.join(backupDir, 'meta.json'));
+            const settings = readJSON(path.join(backupDir, 'settings.json'));
+            const mcpServers = readJSON(path.join(backupDir, 'mcpServers.json'));
+            const manifest = readJSON(path.join(backupDir, 'active-manifest.json'));
+
+            // Extract plugin details
+            const plugins = settings?.enabledPlugins || {};
+            const enabledPlugins = Object.entries(plugins)
+                .filter(([_, enabled]) => enabled)
+                .map(([name]) => name);
+            const disabledPlugins = Object.entries(plugins)
+                .filter(([_, enabled]) => !enabled)
+                .map(([name]) => name);
+
+            // Extract MCP server names
+            const mcpServerNames = Object.keys(mcpServers || {});
+
+            // Extract hooks info
+            const hookNames = Object.keys(settings?.hooks || {});
+
+            // Calculate backup size
+            let sizeBytes = 0;
+            try {
+                const files = fs.readdirSync(backupDir);
+                for (const file of files) {
+                    sizeBytes += fs.statSync(path.join(backupDir, file)).size;
+                }
+            } catch {}
+
             return {
                 name,
-                previousProfile: meta?.previousProfile,
-                backupTime: meta?.backupTime
+                previousProfile: meta?.previousProfile || null,
+                backupTime: meta?.backupTime || null,
+                settings: {
+                    enabledPlugins,
+                    disabledPlugins,
+                    hooks: hookNames,
+                    hasStatusLine: !!settings?.statusLine,
+                    hasEnv: Object.keys(settings?.env || {}).length > 0,
+                    permissionMode: settings?.permissions?.defaultMode || 'default'
+                },
+                mcpServers: mcpServerNames,
+                components: manifest?.components || null,
+                sizeBytes
             };
         });
 }
@@ -1024,7 +1063,7 @@ try {
             break;
         default:
             console.log(`
-Claude Code Profile Switcher v1.2.0
+Claude Code Profile Switcher v1.3.0
 
 Usage:
   node profile-switcher.js <command> [args]

@@ -1,11 +1,11 @@
-# /switch:backups - List Backups
+# /claude-switch:backups - List Backups
 
-Lists automatically generated backups.
+Lists automatically generated backups with detailed configuration snapshots.
 
 ## Usage
 
 ```
-/switch:backups
+/claude-switch:backups
 ```
 
 ## Execution
@@ -16,19 +16,32 @@ node ~/.claude/scripts/profile-switcher.js backups
 
 ## Output Format
 
+The command returns a JSON array. For each backup, present a detailed summary:
+
 ```
 ## Backup List
 
-| Backup Name | Previous Profile | Backup Time |
-|-------------|------------------|-------------|
-| backup-2026-02-04T14-30-00 | current | 2026-02-04 14:30:00 |
-| backup-2026-02-04T12-15-00 | dev | 2026-02-04 12:15:00 |
-| ... | ... | ... |
+For each backup, display:
+
+### backup-2026-02-06T11-13-37-226Z
+- **Profile**: current
+- **Time**: 2026-02-06 11:13:37
+- **Enabled Plugins** (N): plugin-a@source, plugin-b@source
+- **Disabled Plugins** (N): plugin-c@source
+- **MCP Servers** (N): server-a, server-b
+- **Hooks**: SessionStart
+- **Status Line**: Yes/No
+- **Permission Mode**: default
+- **Size**: 2.1 KB
+
+---
+
+(repeat for each backup)
 
 Total: N backups (maximum 10 retained)
 
 ### Restore:
-Use `/switch:restore <backup-name>` to restore to a specific backup point.
+Use `/claude-switch:restore <backup-name>` to restore to a specific backup point.
 ```
 
 ## Notes
@@ -36,3 +49,4 @@ Use `/switch:restore <backup-name>` to restore to a specific backup point.
 - Backups are automatically created when switching profiles
 - Maximum 10 backups retained; oldest deleted first
 - Backup location: `~/.claude/profiles/.backups/`
+- Each backup stores: settings.json, active-manifest.json, mcpServers.json, meta.json
