@@ -6,8 +6,12 @@ Claude Code profile switching system - easily manage and switch between multiple
 
 - **Profile Management**: Create, switch, and delete multiple settings profiles
 - **Auto Backup**: Safe settings changes with automatic backup on switch
-- **Full Settings Support**: Includes plugins, hooks, env vars, permissions, statusline, etc.
+- **Full Settings Support**: Includes plugins, hooks, env vars, permissions, statusline, MCP servers
 - **Quick Switching**: Fast switching between clean and development environments
+- **Atomic Writes**: All file writes use temp-file-then-rename to prevent data corruption
+- **File Locking**: Concurrent operations are serialized to prevent race conditions
+- **Rollback on Failure**: Failed profile switches automatically restore the previous state
+- **Cross-Platform**: Works on Windows (junctions), macOS, and Linux (symlinks)
 
 ## Installation
 
@@ -48,6 +52,21 @@ node scripts/profile-switcher.js init
 | `/claude-switch:backups` | List backups |
 | `/claude-switch:restore <backup>` | Restore from backup |
 
+### Create Options
+
+```bash
+# Copy everything from current profile
+node scripts/profile-switcher.js create dev --from-current --desc="Development"
+
+# Copy only specific items
+node scripts/profile-switcher.js create minimal --copy=plugins,commands --desc="Minimal setup"
+
+# Create empty profile
+node scripts/profile-switcher.js create blank --clean --desc="Clean slate"
+```
+
+Copyable items: `plugins`, `hooks`, `statusline`, `env`, `permissions`, `mcp`, `commands`, `skills`, `agents`, `all`
+
 ### Direct CLI Usage
 
 ```bash
@@ -69,7 +88,7 @@ node scripts/profile-switcher.js get dev
 
 ## Default Profiles
 
-Two default profiles are created on installation:
+Two default profiles are created on initialization:
 
 | Profile | Description |
 |---------|-------------|
@@ -90,6 +109,7 @@ Two default profiles are created on installation:
     "env": { ... },
     "permissions": { ... }
   },
+  "mcpServers": { ... },
   "components": {
     "commands": { "mode": "all", "include": [] },
     "skills": { "mode": "all", "include": [] },
@@ -104,14 +124,24 @@ Two default profiles are created on installation:
 ~/.claude/
 ├── profiles/
 │   ├── profiles.json      # Metadata
+│   ├── .lock              # Operation lock (auto-managed)
 │   ├── current/           # Current settings snapshot
 │   │   └── profile.json
 │   ├── clean/             # Clean profile
 │   │   └── profile.json
-│   └── .backups/          # Auto backups
+│   └── .backups/          # Auto backups (max 10)
 │       └── backup-<timestamp>/
 │
-└── settings.json          # Main settings (overwritten on switch)
+├── settings.json          # Main settings (overwritten on switch)
+└── commands/ -> symlink   # Symlink to active profile's components
+    skills/  -> symlink
+    agents/  -> symlink
+```
+
+## Testing
+
+```bash
+node tests/test-critical-fixes.js
 ```
 
 ## Notes
@@ -119,6 +149,8 @@ Two default profiles are created on installation:
 - **Restart Claude Code** after profile switch
 - Auto backups retain maximum 10 entries (oldest deleted first)
 - `current` profile cannot be deleted/renamed (system snapshot)
+- Profile names: letters, numbers, hyphens, underscores only
+- Stale lock files (>60s) are automatically cleaned
 
 ## License
 

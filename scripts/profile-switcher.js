@@ -3,14 +3,13 @@
  * Claude Code Profile Switcher
  * Profile CRUD and switching logic
  *
- * @version 1.1.0
+ * @version 1.2.0
  * @author Hong
  */
 
 const fs = require('fs');
 const path = require('path');
-
-const { execSync } = require('child_process');
+const crypto = require('crypto');
 
 const CLAUDE_DIR = path.join(process.env.HOME || process.env.USERPROFILE, '.claude');
 const PROFILES_DIR = path.join(CLAUDE_DIR, 'profiles');
@@ -24,6 +23,10 @@ const CLAUDE_JSON = path.join(process.env.HOME || process.env.USERPROFILE, '.cla
 // Directories managed via symlinks
 const SYMLINK_DIRS = ['commands', 'skills', 'agents'];
 const IS_WINDOWS = process.platform === 'win32';
+const PROFILE_NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
+const LOCK_FILE = path.join(PROFILES_DIR, '.lock');
+const LOCK_TIMEOUT_MS = 30000; // 30 seconds
+const LOCK_STALE_MS = 60000; // 1 minute - consider lock stale after this
 
 // Utility functions
 function ensureDir(dir) {
@@ -41,7 +44,79 @@ function readJSON(filepath) {
 }
 
 function writeJSON(filepath, data) {
-    fs.writeFileSync(filepath, JSON.stringify(data, null, 2), 'utf-8');
+    writeFileAtomic(filepath, JSON.stringify(data, null, 2));
+}
+
+// Atomic file write: write to temp file, then rename
+function writeFileAtomic(filepath, content) {
+    const dir = path.dirname(filepath);
+    ensureDir(dir);
+    const tmpFile = path.join(dir, `.tmp-${crypto.randomBytes(6).toString('hex')}`);
+    try {
+        fs.writeFileSync(tmpFile, content, 'utf-8');
+        // On Windows, rename fails if target exists - remove first
+        if (IS_WINDOWS && fs.existsSync(filepath)) {
+            fs.unlinkSync(filepath);
+        }
+        fs.renameSync(tmpFile, filepath);
+    } catch (err) {
+        // Clean up temp file on failure
+        try { fs.unlinkSync(tmpFile); } catch {}
+        throw err;
+    }
+}
+
+// File-based locking for mutating operations
+function acquireLock() {
+    ensureDir(PROFILES_DIR);
+    const deadline = Date.now() + LOCK_TIMEOUT_MS;
+
+    while (Date.now() < deadline) {
+        try {
+            // O_EXCL fails if file already exists - atomic check-and-create
+            const fd = fs.openSync(LOCK_FILE, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY);
+            fs.writeSync(fd, JSON.stringify({ pid: process.pid, time: Date.now() }));
+            fs.closeSync(fd);
+            return true;
+        } catch (err) {
+            if (err.code === 'EEXIST') {
+                // Check if lock is stale
+                try {
+                    const lockData = JSON.parse(fs.readFileSync(LOCK_FILE, 'utf-8'));
+                    if (Date.now() - lockData.time > LOCK_STALE_MS) {
+                        // Stale lock - remove and retry
+                        fs.unlinkSync(LOCK_FILE);
+                        continue;
+                    }
+                } catch {
+                    // Can't read lock file - remove it
+                    try { fs.unlinkSync(LOCK_FILE); } catch {}
+                    continue;
+                }
+                // Wait and retry
+                const waitMs = 50 + Math.random() * 100;
+                const waitUntil = Date.now() + waitMs;
+                while (Date.now() < waitUntil) { /* spin wait */ }
+            } else {
+                throw err;
+            }
+        }
+    }
+    throw new Error('Could not acquire lock - another operation may be in progress. If stuck, delete ' + LOCK_FILE);
+}
+
+function releaseLock() {
+    try { fs.unlinkSync(LOCK_FILE); } catch {}
+}
+
+// Execute a function while holding the lock
+function withLock(fn) {
+    acquireLock();
+    try {
+        return fn();
+    } finally {
+        releaseLock();
+    }
 }
 
 function getTimestamp() {
@@ -99,15 +174,9 @@ function createSymlink(target, linkPath) {
         const absLink = path.resolve(linkPath);
 
         try {
-            // Node.js symlinkSync with 'junction' type
             fs.symlinkSync(absTarget, absLink, 'junction');
         } catch (err) {
-            // Fall back to mklink command on failure
-            try {
-                execSync(`mklink /J "${absLink}" "${absTarget}"`, { stdio: 'ignore', shell: true });
-            } catch {
-                throw new Error(`Failed to create junction: ${err.message}`);
-            }
+            throw new Error(`Failed to create junction from '${absLink}' to '${absTarget}': ${err.message}`);
         }
     } else {
         // Unix: relative path symlink
@@ -334,88 +403,131 @@ function switchSymlinks(profileName) {
     return results;
 }
 
-// Switch to profile
+// Switch to profile (with locking and rollback)
 function switchToProfile(name) {
     if (!profileExists(name)) {
         throw new Error(`Profile '${name}' does not exist`);
     }
 
-    // 1. Backup current settings
-    const backupPath = backupCurrentSettings();
+    return withLock(() => {
+        // 1. Backup current settings
+        const backupPath = backupCurrentSettings();
 
-    // 2. Load profile
-    const profile = loadProfile(name);
-
-    // 3. Update settings.json
-    const currentSettings = readJSON(SETTINGS_JSON) || {};
-    const newSettings = {
-        ...currentSettings,
-        enabledPlugins: profile.settings.enabledPlugins || {},
-        hooks: profile.settings.hooks || {},
-        statusLine: profile.settings.statusLine,
-        env: profile.settings.env || {},
-        permissions: profile.settings.permissions || { defaultMode: 'default' },
-        alwaysThinkingEnabled: profile.settings.alwaysThinkingEnabled ?? true,
-        autoUpdatesChannel: profile.settings.autoUpdatesChannel || 'latest'
-    };
-
-    // Remove key if statusLine is null
-    if (newSettings.statusLine === null) {
-        delete newSettings.statusLine;
-    }
-
-    writeJSON(SETTINGS_JSON, newSettings);
-
-    // 4. Switch MCP server settings
-    const mcpServers = profile.mcpServers || {};
-    saveMcpServers(mcpServers);
-
-    // 5. Switch symlinks
-    const symlinkResults = switchSymlinks(name);
-
-    // 6. Update active-manifest.json (for component isolation)
-    const manifest = {
-        profile: name,
-        updatedAt: new Date().toISOString(),
-        components: profile.components || {},
-        symlinks: symlinkResults
-    };
-    writeJSON(ACTIVE_MANIFEST, manifest);
-
-    // 7. Update profiles.json
-    const meta = loadProfilesMeta();
-    meta.activeProfile = name;
-    meta.lastSwitch = new Date().toISOString();
-    saveProfilesMeta(meta);
-
-    // Count components in profile directory
-    const componentCounts = {};
-    for (const dir of SYMLINK_DIRS) {
-        const targetDir = getProfileComponentDir(name, dir);
-        try {
-            const entries = fs.readdirSync(targetDir, { withFileTypes: true });
-            componentCounts[dir] = entries.filter(e => e.isDirectory() || e.name.endsWith('.md')).length;
-        } catch {
-            componentCounts[dir] = 0;
+        // Save originals for rollback
+        const origSettings = fs.existsSync(SETTINGS_JSON) ? fs.readFileSync(SETTINGS_JSON, 'utf-8') : null;
+        const origClaudeJson = fs.existsSync(CLAUDE_JSON) ? fs.readFileSync(CLAUDE_JSON, 'utf-8') : null;
+        const origManifest = fs.existsSync(ACTIVE_MANIFEST) ? fs.readFileSync(ACTIVE_MANIFEST, 'utf-8') : null;
+        const origSymlinkTargets = {};
+        for (const dir of SYMLINK_DIRS) {
+            const claudeDir = getClaudeComponentDir(dir);
+            if (isSymlink(claudeDir)) {
+                origSymlinkTargets[dir] = getSymlinkTarget(claudeDir);
+            }
         }
-    }
 
-    return {
-        success: true,
-        profile: name,
-        backup: backupPath,
-        settings: {
-            plugins: Object.keys(profile.settings.enabledPlugins || {}).filter(
-                k => profile.settings.enabledPlugins[k]
-            ).length,
-            hooks: Object.keys(profile.settings.hooks || {}).length,
-            hasStatusLine: !!profile.settings.statusLine,
-            mcpServers: Object.keys(mcpServers).length
-        },
-        components: componentCounts,
-        symlinks: symlinkResults,
-        message: `Switched to profile '${name}'. Please restart Claude Code for changes to take effect.`
-    };
+        function rollback() {
+            try {
+                if (origSettings !== null) fs.writeFileSync(SETTINGS_JSON, origSettings, 'utf-8');
+                if (origClaudeJson !== null) fs.writeFileSync(CLAUDE_JSON, origClaudeJson, 'utf-8');
+                if (origManifest !== null) fs.writeFileSync(ACTIVE_MANIFEST, origManifest, 'utf-8');
+                // Restore symlinks
+                for (const dir of SYMLINK_DIRS) {
+                    const claudeDir = getClaudeComponentDir(dir);
+                    if (origSymlinkTargets[dir]) {
+                        try {
+                            removeSymlinkOrDir(claudeDir);
+                            createSymlink(origSymlinkTargets[dir], claudeDir);
+                        } catch {}
+                    }
+                }
+            } catch {}
+        }
+
+        try {
+            // 2. Load profile
+            const profile = loadProfile(name);
+
+            // 3. Update settings.json
+            const currentSettings = readJSON(SETTINGS_JSON) || {};
+            const newSettings = {
+                ...currentSettings,
+                enabledPlugins: profile.settings.enabledPlugins || {},
+                hooks: profile.settings.hooks || {},
+                statusLine: profile.settings.statusLine,
+                env: profile.settings.env || {},
+                permissions: profile.settings.permissions || { defaultMode: 'default' },
+                alwaysThinkingEnabled: profile.settings.alwaysThinkingEnabled ?? true,
+                autoUpdatesChannel: profile.settings.autoUpdatesChannel || 'latest'
+            };
+
+            if (newSettings.statusLine === null) {
+                delete newSettings.statusLine;
+            }
+
+            writeJSON(SETTINGS_JSON, newSettings);
+
+            // 4. Switch MCP server settings
+            const mcpServers = profile.mcpServers || {};
+            saveMcpServers(mcpServers);
+
+            // 5. Switch symlinks
+            const symlinkResults = switchSymlinks(name);
+
+            // Check for symlink errors
+            const symlinkErrors = symlinkResults.filter(r => r.action === 'error');
+            if (symlinkErrors.length > 0) {
+                throw new Error(`Symlink errors: ${symlinkErrors.map(e => `${e.dir}: ${e.error}`).join('; ')}`);
+            }
+
+            // 6. Update active-manifest.json
+            const manifest = {
+                profile: name,
+                updatedAt: new Date().toISOString(),
+                components: profile.components || {},
+                symlinks: symlinkResults
+            };
+            writeJSON(ACTIVE_MANIFEST, manifest);
+
+            // 7. Update profiles.json
+            const meta = loadProfilesMeta();
+            meta.activeProfile = name;
+            meta.lastSwitch = new Date().toISOString();
+            saveProfilesMeta(meta);
+
+            // Count components in profile directory
+            const componentCounts = {};
+            for (const dir of SYMLINK_DIRS) {
+                const targetDir = getProfileComponentDir(name, dir);
+                try {
+                    const entries = fs.readdirSync(targetDir, { withFileTypes: true });
+                    componentCounts[dir] = entries.filter(e => e.isDirectory() || e.name.endsWith('.md')).length;
+                } catch {
+                    componentCounts[dir] = 0;
+                }
+            }
+
+            return {
+                success: true,
+                profile: name,
+                backup: backupPath,
+                settings: {
+                    plugins: Object.keys(profile.settings.enabledPlugins || {}).filter(
+                        k => profile.settings.enabledPlugins[k]
+                    ).length,
+                    hooks: Object.keys(profile.settings.hooks || {}).length,
+                    hasStatusLine: !!profile.settings.statusLine,
+                    mcpServers: Object.keys(mcpServers).length
+                },
+                components: componentCounts,
+                symlinks: symlinkResults,
+                message: `Switched to profile '${name}'. Please restart Claude Code for changes to take effect.`
+            };
+        } catch (err) {
+            // Rollback all changes on failure
+            rollback();
+            throw new Error(`Switch failed (rolled back): ${err.message}`);
+        }
+    });
 }
 
 // Copy directory recursively
@@ -451,14 +563,18 @@ const COPYABLE_ITEMS = {
 const SETTING_ITEMS = ['plugins', 'hooks', 'statusline', 'env', 'permissions'];
 const COMPONENT_ITEMS = ['commands', 'skills', 'agents'];
 
-// Create new profile
+// Create new profile (with locking)
 function createProfile(name, options = {}) {
+    return withLock(() => _createProfile(name, options));
+}
+
+function _createProfile(name, options = {}) {
     if (profileExists(name)) {
         throw new Error(`Profile '${name}' already exists`);
     }
 
     // Validate name
-    if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+    if (!PROFILE_NAME_REGEX.test(name)) {
         throw new Error('Profile name can only contain letters, numbers, hyphens, and underscores');
     }
 
@@ -590,8 +706,12 @@ function createProfile(name, options = {}) {
     };
 }
 
-// Delete profile
+// Delete profile (with locking)
 function deleteProfile(name) {
+    return withLock(() => _deleteProfile(name));
+}
+
+function _deleteProfile(name) {
     if (name === 'current') {
         throw new Error("Cannot delete 'current' profile - it's a system snapshot");
     }
@@ -615,8 +735,12 @@ function deleteProfile(name) {
     return { success: true, message: `Profile '${name}' deleted` };
 }
 
-// Rename profile
+// Rename profile (with locking)
 function renameProfile(oldName, newName) {
+    return withLock(() => _renameProfile(oldName, newName));
+}
+
+function _renameProfile(oldName, newName) {
     if (oldName === 'current') {
         throw new Error("Cannot rename 'current' profile - it's a system snapshot");
     }
@@ -630,7 +754,7 @@ function renameProfile(oldName, newName) {
     }
 
     // Validate name
-    if (!/^[a-zA-Z0-9_-]+$/.test(newName)) {
+    if (!PROFILE_NAME_REGEX.test(newName)) {
         throw new Error('Profile name can only contain letters, numbers, hyphens, and underscores');
     }
 
@@ -676,8 +800,12 @@ function getProfile(name) {
     };
 }
 
-// Restore from backup
+// Restore from backup (with locking)
 function restoreFromBackup(backupName) {
+    return withLock(() => _restoreFromBackup(backupName));
+}
+
+function _restoreFromBackup(backupName) {
     const backupDir = path.join(BACKUPS_DIR, backupName);
     if (!fs.existsSync(backupDir)) {
         throw new Error(`Backup '${backupName}' does not exist`);
@@ -724,8 +852,12 @@ function listBackups() {
         });
 }
 
-// Initialize system
+// Initialize system (with locking)
 function init() {
+    return withLock(() => _init());
+}
+
+function _init() {
     ensureDir(PROFILES_DIR);
     ensureDir(BACKUPS_DIR);
 
@@ -892,7 +1024,7 @@ try {
             break;
         default:
             console.log(`
-Claude Code Profile Switcher v1.1.0
+Claude Code Profile Switcher v1.2.0
 
 Usage:
   node profile-switcher.js <command> [args]
