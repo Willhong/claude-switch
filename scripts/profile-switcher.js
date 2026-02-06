@@ -3,7 +3,7 @@
  * Claude Code Profile Switcher
  * Profile CRUD and switching logic
  *
- * @version 1.5.2
+ * @version 1.5.3
  * @author Hong
  */
 
@@ -1189,7 +1189,7 @@ try {
             break;
         default:
             console.log(`
-Claude Code Profile Switcher v1.5.2
+Claude Code Profile Switcher v1.5.3
 
 Usage:
   node profile-switcher.js <command> [args]
