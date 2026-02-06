@@ -3,7 +3,7 @@
  * Claude Code Profile Switcher
  * Profile CRUD and switching logic
  *
- * @version 1.5.3
+ * @version 1.6.0
  * @author Hong
  */
 
@@ -543,7 +543,7 @@ function switchToProfile(name) {
 }
 
 // Sync source files to plugin cache and update registry
-function syncToCache(sourceDir) {
+function syncToCache(sourceDir, options = {}) {
     const pluginCacheBase = path.join(CLAUDE_DIR, 'plugins', 'cache', 'claude-switch', 'claude-switch');
     if (!fs.existsSync(pluginCacheBase)) return null;
 
@@ -555,38 +555,39 @@ function syncToCache(sourceDir) {
 
     const pkg = readJSON(path.join(sourceDir, 'package.json'));
     const newVersion = pkg?.version || 'unknown';
+    const newVersionDir = path.join(pluginCacheBase, newVersion);
 
-    // Sync files to all existing version dirs
+    // Ensure target version directory exists
+    ensureDir(newVersionDir);
+
+    // Copy source files to the target version directory
+    for (const dir of ['scripts', 'commands']) {
+        const src = path.join(sourceDir, dir);
+        const dest = path.join(newVersionDir, dir);
+        if (fs.existsSync(src)) {
+            if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true });
+            copyDirRecursive(src, dest);
+        }
+    }
+    for (const file of ['package.json', 'CLAUDE.md', 'README.md', 'LICENSE']) {
+        const src = path.join(sourceDir, file);
+        if (fs.existsSync(src)) {
+            fs.copyFileSync(src, path.join(newVersionDir, file));
+        }
+    }
+
+    // Remove all old version directories
+    const removed = [];
     for (const ver of versions) {
-        const cacheDir = path.join(pluginCacheBase, ver);
-        for (const dir of ['scripts', 'commands']) {
-            const src = path.join(sourceDir, dir);
-            const dest = path.join(cacheDir, dir);
-            if (fs.existsSync(src)) {
-                if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true });
-                copyDirRecursive(src, dest);
-            }
-        }
-        for (const file of ['package.json', 'CLAUDE.md', 'README.md', 'LICENSE']) {
-            const src = path.join(sourceDir, file);
-            if (fs.existsSync(src)) {
-                fs.copyFileSync(src, path.join(cacheDir, file));
-            }
+        if (ver !== newVersion) {
+            try {
+                fs.rmSync(path.join(pluginCacheBase, ver), { recursive: true });
+                removed.push(ver);
+            } catch {}
         }
     }
 
-    // Rename latest version dir to match actual version
-    const latestDir = versions.sort().pop();
-    const renamedFrom = latestDir;
-    if (latestDir !== newVersion) {
-        const oldPath = path.join(pluginCacheBase, latestDir);
-        const newPath = path.join(pluginCacheBase, newVersion);
-        if (!fs.existsSync(newPath)) {
-            fs.renameSync(oldPath, newPath);
-        }
-    }
-
-    // Update installed_plugins.json with new version and path
+    // Update installed_plugins.json with new version, path, and git SHA
     const installedPath = path.join(CLAUDE_DIR, 'plugins', 'installed_plugins.json');
     const installed = readJSON(installedPath);
     if (installed?.plugins?.['claude-switch@claude-switch']) {
@@ -595,11 +596,14 @@ function syncToCache(sourceDir) {
             entry.version = newVersion;
             entry.installPath = path.join(pluginCacheBase, newVersion);
             entry.lastUpdated = new Date().toISOString();
+            if (options.gitCommitSha) {
+                entry.gitCommitSha = options.gitCommitSha;
+            }
         }
         writeJSON(installedPath, installed);
     }
 
-    return { updated: versions, version: newVersion, renamedFrom };
+    return { version: newVersion, removed };
 }
 
 // Find git repo URL from marketplace config
@@ -621,10 +625,14 @@ function updatePluginCache() {
     const isRunningFromCache = projectDir.includes(path.join('plugins', 'cache'));
 
     if (!isRunningFromCache) {
-        // Running from source - sync directly
+        // Running from source - sync directly, capture git SHA if available
         const pkg = readJSON(path.join(projectDir, 'package.json'));
         if (!pkg?.name || pkg.name !== 'claude-switch') return null;
-        return syncToCache(projectDir);
+        let gitSha = null;
+        try {
+            gitSha = execSync('git rev-parse HEAD', { cwd: projectDir, stdio: 'pipe' }).toString().trim();
+        } catch {}
+        return syncToCache(projectDir, { gitCommitSha: gitSha });
     }
 
     // Running from cache - pull latest from git
@@ -636,10 +644,12 @@ function updatePluginCache() {
     const tmpDir = path.join(os.tmpdir(), `claude-switch-update-${Date.now()}`);
     try {
         execSync(`git clone --depth 1 "${repoUrl}" "${tmpDir}"`, { stdio: 'pipe' });
-        const result = syncToCache(tmpDir);
-        return result;
+        let gitSha = null;
+        try {
+            gitSha = execSync('git rev-parse HEAD', { cwd: tmpDir, stdio: 'pipe' }).toString().trim();
+        } catch {}
+        return syncToCache(tmpDir, { gitCommitSha: gitSha });
     } finally {
-        // Clean up temp dir
         try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
     }
 }
@@ -1185,11 +1195,12 @@ try {
                 throw new Error('Cannot update: either running from plugin cache (no source to sync from) or plugin cache not found');
             }
             result.success = true;
-            result.message = `Plugin cache updated (${result.updated.length} version(s): ${result.updated.join(', ')})`;
+            const removedStr = result.removed.length > 0 ? ` Removed old: ${result.removed.join(', ')}` : '';
+            result.message = `Plugin cache updated to v${result.version}.${removedStr}`;
             break;
         default:
             console.log(`
-Claude Code Profile Switcher v1.5.3
+Claude Code Profile Switcher v1.6.0
 
 Usage:
   node profile-switcher.js <command> [args]
