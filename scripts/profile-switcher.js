@@ -3,7 +3,7 @@
  * Claude Code Profile Switcher
  * Profile CRUD and switching logic
  *
- * @version 1.6.2
+ * @version 1.6.3
  * @author Hong
  */
 
@@ -28,6 +28,11 @@ const LOCK_FILE = path.join(PROFILES_DIR, '.lock');
 const LOCK_TIMEOUT_MS = 30000; // 30 seconds
 const LOCK_STALE_MS = 60000; // 1 minute - consider lock stale after this
 const SELF_PLUGIN_KEY = 'claude-switch@claude-switch';
+const PLUGIN_KEY_REGEX = /^[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+$/;
+const KNOWN_MARKETPLACES_JSON = path.join(CLAUDE_DIR, 'plugins', 'known_marketplaces.json');
+const INSTALLED_PLUGINS_JSON = path.join(CLAUDE_DIR, 'plugins', 'installed_plugins.json');
+const PLUGIN_CACHE_DIR = path.join(CLAUDE_DIR, 'plugins', 'cache');
+const MARKETPLACES_DIR = path.join(CLAUDE_DIR, 'plugins', 'marketplaces');
 
 // Utility functions
 function ensureDir(dir) {
@@ -256,6 +261,69 @@ function listProfiles() {
     }
 
     return profiles;
+}
+
+// Validate plugin key format (plugin@marketplace)
+function validatePluginKey(key) {
+    if (!PLUGIN_KEY_REGEX.test(key)) {
+        throw new Error(`Invalid plugin key '${key}'. Expected format: plugin@marketplace (alphanumeric, hyphens, underscores only)`);
+    }
+}
+
+// Parse plugin key into components
+function parsePluginKey(key) {
+    const atIndex = key.indexOf('@');
+    return {
+        pluginName: key.substring(0, atIndex),
+        marketplaceName: key.substring(atIndex + 1)
+    };
+}
+
+// Resolve target profiles from args (--all or --profiles=a,b)
+function resolveTargetProfiles(args) {
+    if (args.includes('--all')) {
+        const allProfiles = listProfiles();
+        if (allProfiles.length === 0) {
+            throw new Error('No profiles found. Run init first.');
+        }
+        return allProfiles.map(p => p.name);
+    }
+
+    const profilesArg = args.find(a => a.startsWith('--profiles='));
+    if (profilesArg) {
+        const names = profilesArg.slice('--profiles='.length).split(',').map(s => s.trim()).filter(Boolean);
+        if (names.length === 0) {
+            throw new Error('--profiles= requires at least one profile name');
+        }
+        for (const name of names) {
+            if (!profileExists(name)) {
+                throw new Error(`Profile '${name}' does not exist`);
+            }
+        }
+        return names;
+    }
+
+    throw new Error('Target profiles required: use --all or --profiles=name1,name2');
+}
+
+// Find a component item (command/skill/agent) by name in a base directory
+function findComponentItem(baseDir, name) {
+    // 1. Directory: baseDir/name/
+    const dirPath = path.join(baseDir, name);
+    if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {
+        return { path: dirPath, isDirectory: true, filename: name };
+    }
+    // 2. Markdown file: baseDir/name.md
+    const mdPath = path.join(baseDir, `${name}.md`);
+    if (fs.existsSync(mdPath)) {
+        return { path: mdPath, isDirectory: false, filename: `${name}.md` };
+    }
+    // 3. Skill file: baseDir/name.skill
+    const skillPath = path.join(baseDir, `${name}.skill`);
+    if (fs.existsSync(skillPath)) {
+        return { path: skillPath, isDirectory: false, filename: `${name}.skill` };
+    }
+    return null;
 }
 
 // Check profile existence
@@ -691,6 +759,399 @@ function copyDirRecursive(src, dest) {
     }
 }
 
+// Ensure a plugin is installed (auto-install from marketplace cache if needed)
+function ensurePluginInstalled(pluginKey) {
+    const { pluginName, marketplaceName } = parsePluginKey(pluginKey);
+
+    // Check if already installed
+    const installed = readJSON(INSTALLED_PLUGINS_JSON);
+    if (installed?.plugins?.[pluginKey]) {
+        const entry = installed.plugins[pluginKey][0];
+        return { installed: false, version: entry.version, installPath: entry.installPath };
+    }
+
+    // Look up marketplace
+    const knownMarketplaces = readJSON(KNOWN_MARKETPLACES_JSON);
+    if (!knownMarketplaces?.[marketplaceName]) {
+        throw new Error(`Marketplace '${marketplaceName}' not registered. Add it first with: claude mcp add-json ...`);
+    }
+
+    // Read marketplace.json from marketplace directory
+    const marketplaceJsonPath = path.join(MARKETPLACES_DIR, marketplaceName, '.claude-plugin', 'marketplace.json');
+    const marketplaceJson = readJSON(marketplaceJsonPath);
+    if (!marketplaceJson) {
+        throw new Error(`Cannot read marketplace config at '${marketplaceJsonPath}'`);
+    }
+
+    // Find matching plugin entry
+    const pluginEntry = (marketplaceJson.plugins || []).find(p => p.name === pluginName);
+    if (!pluginEntry) {
+        throw new Error(`Plugin '${pluginName}' not found in marketplace '${marketplaceName}'`);
+    }
+
+    // Resolve source path
+    const marketplaceInfo = knownMarketplaces[marketplaceName];
+    const installLocation = marketplaceInfo.installLocation || path.join(MARKETPLACES_DIR, marketplaceName);
+    const sourcePath = path.resolve(installLocation, pluginEntry.source || '.');
+    const version = pluginEntry.version || 'unknown';
+
+    // Copy to plugin cache
+    const cachePath = path.join(PLUGIN_CACHE_DIR, marketplaceName, pluginName, version);
+    ensureDir(cachePath);
+    copyDirRecursive(sourcePath, cachePath);
+
+    // Register in installed_plugins.json
+    const installedData = readJSON(INSTALLED_PLUGINS_JSON) || { plugins: {} };
+    if (!installedData.plugins) installedData.plugins = {};
+    installedData.plugins[pluginKey] = [{
+        scope: 'user',
+        installPath: cachePath,
+        version: version,
+        installedAt: new Date().toISOString(),
+        lastUpdated: new Date().toISOString()
+    }];
+    writeJSON(INSTALLED_PLUGINS_JSON, installedData);
+
+    return { installed: true, version, installPath: cachePath };
+}
+
+// Install (enable) a plugin across multiple profiles
+function installAll(pluginKey, args) {
+    validatePluginKey(pluginKey);
+    const pluginResult = ensurePluginInstalled(pluginKey);
+    const targetProfiles = resolveTargetProfiles(args);
+
+    const results = withLock(() => {
+        const profileResults = [];
+        const meta = loadProfilesMeta();
+
+        for (const profileName of targetProfiles) {
+            try {
+                const profile = loadProfile(profileName);
+                if (!profile) {
+                    profileResults.push({ profile: profileName, status: 'error', note: 'Profile data not found' });
+                    continue;
+                }
+
+                if (!profile.settings) profile.settings = {};
+                if (!profile.settings.enabledPlugins) profile.settings.enabledPlugins = {};
+
+                if (profile.settings.enabledPlugins[pluginKey] === true) {
+                    profileResults.push({ profile: profileName, status: 'skipped', note: 'Already enabled' });
+                    continue;
+                }
+
+                profile.settings.enabledPlugins[pluginKey] = true;
+                profile.updatedAt = new Date().toISOString();
+                saveProfile(profileName, profile);
+
+                // If this is the active profile, also update settings.json
+                if (meta.activeProfile === profileName) {
+                    const settings = readJSON(SETTINGS_JSON) || {};
+                    if (!settings.enabledPlugins) settings.enabledPlugins = {};
+                    settings.enabledPlugins[pluginKey] = true;
+                    writeJSON(SETTINGS_JSON, settings);
+                }
+
+                profileResults.push({ profile: profileName, status: 'enabled', note: 'Plugin enabled' });
+            } catch (err) {
+                profileResults.push({ profile: profileName, status: 'error', note: err.message });
+            }
+        }
+
+        return profileResults;
+    });
+
+    const enabled = results.filter(r => r.status === 'enabled').length;
+    const skipped = results.filter(r => r.status === 'skipped').length;
+
+    return {
+        success: true,
+        pluginKey,
+        pluginInstalled: pluginResult.installed,
+        profiles: results,
+        summary: { total: results.length, enabled, skipped }
+    };
+}
+
+// Uninstall (disable) a plugin across multiple profiles
+function uninstallAll(pluginKey, args) {
+    validatePluginKey(pluginKey);
+
+    if (pluginKey === SELF_PLUGIN_KEY) {
+        throw new Error('Cannot uninstall claude-switch from profiles (self-preservation)');
+    }
+
+    const targetProfiles = resolveTargetProfiles(args);
+
+    const results = withLock(() => {
+        const profileResults = [];
+        const meta = loadProfilesMeta();
+
+        for (const profileName of targetProfiles) {
+            try {
+                const profile = loadProfile(profileName);
+                if (!profile) {
+                    profileResults.push({ profile: profileName, status: 'error', note: 'Profile data not found' });
+                    continue;
+                }
+
+                if (!profile.settings?.enabledPlugins || !(pluginKey in profile.settings.enabledPlugins)) {
+                    profileResults.push({ profile: profileName, status: 'skipped', note: 'Not enabled' });
+                    continue;
+                }
+
+                delete profile.settings.enabledPlugins[pluginKey];
+                profile.updatedAt = new Date().toISOString();
+                saveProfile(profileName, profile);
+
+                // If this is the active profile, also update settings.json
+                if (meta.activeProfile === profileName) {
+                    const settings = readJSON(SETTINGS_JSON) || {};
+                    if (settings.enabledPlugins && pluginKey in settings.enabledPlugins) {
+                        delete settings.enabledPlugins[pluginKey];
+                        writeJSON(SETTINGS_JSON, settings);
+                    }
+                }
+
+                profileResults.push({ profile: profileName, status: 'disabled', note: 'Plugin disabled' });
+            } catch (err) {
+                profileResults.push({ profile: profileName, status: 'error', note: err.message });
+            }
+        }
+
+        return profileResults;
+    });
+
+    const disabled = results.filter(r => r.status === 'disabled').length;
+    const skipped = results.filter(r => r.status === 'skipped').length;
+
+    return {
+        success: true,
+        pluginKey,
+        profiles: results,
+        summary: { total: results.length, disabled, skipped }
+    };
+}
+
+// Spread a single item from active profile to target profiles
+function spread(type, name, args) {
+    // Validate type
+    if (!ALL_SPREAD_TYPES.includes(type)) {
+        throw new Error(`Invalid type '${type}'. Valid: ${ALL_SPREAD_TYPES.join(', ')}`);
+    }
+
+    // Validate name requirement
+    if (!SPREAD_VALUE_TYPES.includes(type) && !name) {
+        throw new Error(`Name required for '${type}' type`);
+    }
+
+    // Parse --force flag and strip from args before resolveTargetProfiles
+    const force = args.includes('--force');
+    const filteredArgs = args.filter(a => a !== '--force');
+
+    // Resolve target profiles
+    const targetProfiles = resolveTargetProfiles(filteredArgs);
+
+    // Get active profile
+    const meta = loadProfilesMeta();
+    const activeProfile = meta.activeProfile;
+
+    // Exclude active profile from targets
+    const profilesArg = filteredArgs.find(a => a.startsWith('--profiles='));
+    if (profilesArg) {
+        const explicitNames = profilesArg.slice('--profiles='.length).split(',').map(s => s.trim());
+        if (explicitNames.includes(activeProfile)) {
+            throw new Error(`Cannot spread to active profile '${activeProfile}' (it is the source)`);
+        }
+    }
+    const targets = targetProfiles.filter(p => p !== activeProfile);
+    if (targets.length === 0) {
+        throw new Error('No target profiles after excluding active profile');
+    }
+
+    // Validate source item exists
+    const sourceProfile = loadProfile(activeProfile);
+    if (!sourceProfile) {
+        throw new Error(`Active profile '${activeProfile}' data not found`);
+    }
+
+    let sourceItem = null; // for component types
+    let sourceValue = null; // for keyed/value types
+
+    if (SPREAD_COMPONENT_TYPES.includes(type)) {
+        const baseDir = getProfileComponentDir(activeProfile, type);
+        sourceItem = findComponentItem(baseDir, name);
+        if (!sourceItem) {
+            throw new Error(`'${name}' not found in ${type}/ of active profile '${activeProfile}'`);
+        }
+    } else if (SPREAD_KEYED_TYPES.includes(type)) {
+        if (type === 'hooks') {
+            sourceValue = sourceProfile.settings?.hooks?.[name];
+            if (sourceValue === undefined) {
+                throw new Error(`Hook '${name}' not found in active profile '${activeProfile}'`);
+            }
+        } else if (type === 'mcp') {
+            sourceValue = sourceProfile.mcpServers?.[name];
+            if (sourceValue === undefined) {
+                throw new Error(`MCP server '${name}' not found in active profile '${activeProfile}'`);
+            }
+        } else if (type === 'env') {
+            sourceValue = sourceProfile.settings?.env?.[name];
+            if (sourceValue === undefined) {
+                throw new Error(`Env variable '${name}' not found in active profile '${activeProfile}'`);
+            }
+        }
+    } else if (SPREAD_VALUE_TYPES.includes(type)) {
+        if (type === 'statusline') {
+            sourceValue = sourceProfile.settings?.statusLine;
+            if (sourceValue == null) {
+                throw new Error(`Statusline not set in active profile '${activeProfile}'`);
+            }
+        } else if (type === 'permissions') {
+            sourceValue = sourceProfile.settings?.permissions;
+            if (sourceValue == null) {
+                throw new Error(`Permissions not set in active profile '${activeProfile}'`);
+            }
+        }
+    }
+
+    // Execute spread within lock
+    const profileResults = withLock(() => {
+        const results = [];
+
+        for (const profileName of targets) {
+            try {
+                if (SPREAD_COMPONENT_TYPES.includes(type)) {
+                    const targetBaseDir = getProfileComponentDir(profileName, type);
+                    ensureDir(targetBaseDir);
+                    const targetPath = path.join(targetBaseDir, sourceItem.filename);
+                    const exists = fs.existsSync(targetPath);
+
+                    if (exists && !force) {
+                        results.push({ profile: profileName, status: 'skipped', note: 'Already exists (use --force to overwrite)' });
+                        continue;
+                    }
+
+                    if (exists) {
+                        fs.rmSync(targetPath, { recursive: true });
+                    }
+
+                    if (sourceItem.isDirectory) {
+                        copyDirRecursive(sourceItem.path, targetPath);
+                    } else {
+                        fs.copyFileSync(sourceItem.path, targetPath);
+                    }
+
+                    results.push({
+                        profile: profileName,
+                        status: exists ? 'overwritten' : 'copied',
+                        note: exists ? 'Overwritten' : 'Copied'
+                    });
+                } else if (SPREAD_KEYED_TYPES.includes(type)) {
+                    const profile = loadProfile(profileName);
+                    if (!profile) {
+                        results.push({ profile: profileName, status: 'error', note: 'Profile data not found' });
+                        continue;
+                    }
+
+                    let exists = false;
+                    const clonedValue = JSON.parse(JSON.stringify(sourceValue));
+
+                    if (type === 'hooks') {
+                        if (!profile.settings) profile.settings = {};
+                        if (!profile.settings.hooks) profile.settings.hooks = {};
+                        exists = profile.settings.hooks[name] !== undefined;
+                        if (exists && !force) {
+                            results.push({ profile: profileName, status: 'skipped', note: 'Already exists (use --force to overwrite)' });
+                            continue;
+                        }
+                        profile.settings.hooks[name] = clonedValue;
+                    } else if (type === 'mcp') {
+                        if (!profile.mcpServers) profile.mcpServers = {};
+                        exists = profile.mcpServers[name] !== undefined;
+                        if (exists && !force) {
+                            results.push({ profile: profileName, status: 'skipped', note: 'Already exists (use --force to overwrite)' });
+                            continue;
+                        }
+                        profile.mcpServers[name] = clonedValue;
+                    } else if (type === 'env') {
+                        if (!profile.settings) profile.settings = {};
+                        if (!profile.settings.env) profile.settings.env = {};
+                        exists = profile.settings.env[name] !== undefined;
+                        if (exists && !force) {
+                            results.push({ profile: profileName, status: 'skipped', note: 'Already exists (use --force to overwrite)' });
+                            continue;
+                        }
+                        profile.settings.env[name] = clonedValue;
+                    }
+
+                    profile.updatedAt = new Date().toISOString();
+                    saveProfile(profileName, profile);
+
+                    results.push({
+                        profile: profileName,
+                        status: exists ? 'overwritten' : 'copied',
+                        note: exists ? 'Overwritten' : 'Copied'
+                    });
+                } else if (SPREAD_VALUE_TYPES.includes(type)) {
+                    const profile = loadProfile(profileName);
+                    if (!profile) {
+                        results.push({ profile: profileName, status: 'error', note: 'Profile data not found' });
+                        continue;
+                    }
+
+                    if (!profile.settings) profile.settings = {};
+                    const clonedValue = JSON.parse(JSON.stringify(sourceValue));
+                    let exists = false;
+
+                    if (type === 'statusline') {
+                        exists = profile.settings.statusLine != null;
+                        if (exists && !force) {
+                            results.push({ profile: profileName, status: 'skipped', note: 'Already set (use --force to overwrite)' });
+                            continue;
+                        }
+                        profile.settings.statusLine = clonedValue;
+                    } else if (type === 'permissions') {
+                        exists = profile.settings.permissions != null;
+                        if (exists && !force) {
+                            results.push({ profile: profileName, status: 'skipped', note: 'Already set (use --force to overwrite)' });
+                            continue;
+                        }
+                        profile.settings.permissions = clonedValue;
+                    }
+
+                    profile.updatedAt = new Date().toISOString();
+                    saveProfile(profileName, profile);
+
+                    results.push({
+                        profile: profileName,
+                        status: exists ? 'overwritten' : 'copied',
+                        note: exists ? 'Overwritten' : 'Copied'
+                    });
+                }
+            } catch (err) {
+                results.push({ profile: profileName, status: 'error', note: err.message });
+            }
+        }
+
+        return results;
+    });
+
+    const copied = profileResults.filter(r => r.status === 'copied').length;
+    const overwritten = profileResults.filter(r => r.status === 'overwritten').length;
+    const skipped = profileResults.filter(r => r.status === 'skipped').length;
+
+    return {
+        success: true,
+        type,
+        name: name || null,
+        source: activeProfile,
+        profiles: profileResults,
+        summary: { total: profileResults.length, copied, overwritten, skipped }
+    };
+}
+
 // Copyable items list
 const COPYABLE_ITEMS = {
     // Settings
@@ -708,6 +1169,12 @@ const COPYABLE_ITEMS = {
 
 const SETTING_ITEMS = ['plugins', 'hooks', 'statusline', 'env', 'permissions'];
 const COMPONENT_ITEMS = ['commands', 'skills', 'agents'];
+
+// Spread command types
+const SPREAD_COMPONENT_TYPES = ['commands', 'skills', 'agents'];
+const SPREAD_KEYED_TYPES = ['hooks', 'mcp', 'env'];
+const SPREAD_VALUE_TYPES = ['statusline', 'permissions'];
+const ALL_SPREAD_TYPES = [...SPREAD_COMPONENT_TYPES, ...SPREAD_KEYED_TYPES, ...SPREAD_VALUE_TYPES];
 
 // Create new profile (with locking)
 function createProfile(name, options = {}) {
@@ -1207,6 +1674,32 @@ try {
             if (!args[0]) throw new Error('Backup name required');
             result = restoreFromBackup(args[0]);
             break;
+        case 'install-all':
+            if (!args[0]) throw new Error('Plugin key required (format: plugin@marketplace)');
+            result = installAll(args[0], args.slice(1));
+            break;
+        case 'uninstall-all':
+            if (!args[0]) throw new Error('Plugin key required (format: plugin@marketplace)');
+            result = uninstallAll(args[0], args.slice(1));
+            break;
+        case 'spread': {
+            if (!args[0]) throw new Error('Type required (commands, skills, agents, hooks, mcp, env, statusline, permissions)');
+            const spreadType = args[0];
+            if (!ALL_SPREAD_TYPES.includes(spreadType)) {
+                throw new Error(`Invalid type '${spreadType}'. Valid: ${ALL_SPREAD_TYPES.join(', ')}`);
+            }
+            let spreadName = null;
+            let spreadArgs;
+            if (SPREAD_VALUE_TYPES.includes(spreadType)) {
+                spreadArgs = args.slice(1);
+            } else {
+                spreadName = args[1];
+                if (!spreadName || spreadName.startsWith('--')) throw new Error(`Name required for '${spreadType}' type`);
+                spreadArgs = args.slice(2);
+            }
+            result = spread(spreadType, spreadName, spreadArgs);
+            break;
+        }
         case 'version':
             const selfPkg = readJSON(path.join(path.dirname(__dirname), 'package.json')) || {};
             const versionMeta = loadProfilesMeta();
@@ -1252,7 +1745,7 @@ try {
             break;
         default:
             console.log(`
-Claude Code Profile Switcher v1.6.2
+Claude Code Profile Switcher v1.6.3
 
 Usage:
   node profile-switcher.js <command> [args]
@@ -1274,6 +1767,27 @@ Commands:
   backup                  Create backup of current settings
   backups                 List all backups
   restore <backup>        Restore from backup
+  install-all <key> [opts]   Enable a plugin across profiles
+    --all                 Target all profiles
+    --profiles=a,b        Target specific profiles
+  uninstall-all <key> [opts] Disable a plugin across profiles
+    --all                 Target all profiles
+    --profiles=a,b        Target specific profiles
+  spread <type> [name] [opts] Copy item from active profile to others
+    Types (name required):
+      commands <name>         Copy a command
+      skills <name>           Copy a skill
+      agents <name>           Copy an agent
+      hooks <eventName>       Copy a hook event config
+      mcp <serverName>        Copy an MCP server config
+      env <varName>           Copy an env variable
+    Types (no name):
+      statusline              Copy statusline config
+      permissions             Copy permissions config
+    Options:
+      --all                   Target all other profiles
+      --profiles=a,b          Target specific profiles
+      --force                 Overwrite if already exists
   update                  Sync source to plugin cache
   version                 Show current version
 
@@ -1284,6 +1798,12 @@ Examples:
   node profile-switcher.js create work --copy=all --desc="Work profile"
   node profile-switcher.js switch clean
   node profile-switcher.js list
+  node profile-switcher.js install-all my-plugin@my-marketplace --all
+  node profile-switcher.js install-all my-plugin@my-marketplace --profiles=dev,work
+  node profile-switcher.js uninstall-all old-plugin@marketplace --all
+  node profile-switcher.js spread commands gsd --all
+  node profile-switcher.js spread mcp MCP_DOCKER --profiles=dev,work --force
+  node profile-switcher.js spread statusline --all
 `);
             process.exit(0);
     }
