@@ -3,7 +3,7 @@
  * Claude Code Profile Switcher
  * Profile CRUD and switching logic
  *
- * @version 1.7.0
+ * @version 1.7.1
  * @author Hong
  */
 
@@ -1578,6 +1578,16 @@ function _restoreFromBackup(backupName) {
         fs.copyFileSync(manifestBackup, ACTIVE_MANIFEST);
     }
 
+    const claudeMdBackup = path.join(backupDir, 'CLAUDE.md');
+    if (fs.existsSync(claudeMdBackup)) {
+        fs.copyFileSync(claudeMdBackup, CLAUDE_MD);
+    }
+
+    const mcpBackup = path.join(backupDir, 'mcpServers.json');
+    if (fs.existsSync(mcpBackup)) {
+        saveMcpServers(readJSON(mcpBackup));
+    }
+
     const metaBackup = readJSON(path.join(backupDir, 'meta.json'));
     if (metaBackup?.previousProfile) {
         const meta = loadProfilesMeta();
@@ -1889,7 +1899,7 @@ try {
             break;
         default:
             console.log(`
-Claude Code Profile Switcher v1.7.0
+Claude Code Profile Switcher v1.7.1
 
 Usage:
   node profile-switcher.js <command> [args]

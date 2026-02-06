@@ -6,12 +6,12 @@
   },
   "metadata": {
     "description": "Profile switching system for Claude Code - manage multiple configurations (plugins, hooks, commands, skills)",
-    "version": "1.7.0"
+    "version": "1.7.1"
   },
   "plugins": [
     {
       "name": "claude-switch",
-      "version": "1.7.0",
+      "version": "1.7.1",
       "source": "./",
       "description": "Switch between different Claude Code profiles. Each profile can have its own set of plugins, hooks, environment variables, and component configurations. Includes 'current' (snapshot) and 'clean' (minimal) profiles by default.",
       "category": "utilities",
@@ -25,5 +25,5 @@
       ]
     }
   ],
-  "version": "1.7.0"
+  "version": "1.7.1"
 }
