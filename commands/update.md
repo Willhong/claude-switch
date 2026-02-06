@@ -1,6 +1,8 @@
 # /claude-switch:update - Update Plugin Cache
 
-Syncs the latest source code from the project repository to all cached plugin versions. This ensures slash commands, scripts, and documentation are up to date.
+Syncs the latest source code to all cached plugin versions. Works from any context:
+- **From source directory**: copies files directly to cache
+- **From plugin cache**: pulls latest from GitHub and syncs to cache
 
 ## Usage
 
@@ -11,15 +13,8 @@ Syncs the latest source code from the project repository to all cached plugin ve
 ## Execution
 
 ```bash
-node C:/Users/Hong/workspace/claude-switch/scripts/profile-switcher.js update
+SCRIPT=$(ls ~/.claude/plugins/cache/claude-switch/claude-switch/*/scripts/profile-switcher.js 2>/dev/null | tail -1) && node "$SCRIPT" update
 ```
-
-If the above path doesn't work, find the project source:
-```bash
-REPO=$(git -C "$(dirname "$(ls ~/.claude/plugins/cache/claude-switch/claude-switch/*/scripts/profile-switcher.js 2>/dev/null | tail -1)")" rev-parse --show-toplevel 2>/dev/null) && node "$REPO/scripts/profile-switcher.js" update
-```
-
-**Important**: This command must run the script from the **project source directory**, not from the plugin cache. Running from cache will fail since there is no newer source to sync from.
 
 ## Post-Update Message
 
@@ -39,7 +34,8 @@ Updated **N** cached version(s) with latest source (v<version>).
 
 ## Notes
 
-- Only works when run from the project source directory
+- When running from cache, pulls latest from the GitHub repo registered in marketplace config
 - Updates all cached versions (e.g., 1.0.0, 1.2.0, 1.3.0)
 - Does not modify profile data or settings
+- Requires `git` to be available when pulling from remote
 - Safe to run anytime - idempotent operation

@@ -3,7 +3,7 @@
  * Claude Code Profile Switcher
  * Profile CRUD and switching logic
  *
- * @version 1.5.0
+ * @version 1.5.2
  * @author Hong
  */
 
@@ -542,17 +542,8 @@ function switchToProfile(name) {
     });
 }
 
-// Update plugin cache from source directory
-function updatePluginCache() {
-    const scriptDir = __dirname;
-    const projectDir = path.dirname(scriptDir);
-
-    // Don't self-update if running from plugin cache
-    if (projectDir.includes(path.join('plugins', 'cache'))) return null;
-
-    const pkg = readJSON(path.join(projectDir, 'package.json'));
-    if (!pkg?.name || pkg.name !== 'claude-switch') return null;
-
+// Sync source files to all plugin cache versions
+function syncToCache(sourceDir) {
     const pluginCacheBase = path.join(CLAUDE_DIR, 'plugins', 'cache', 'claude-switch', 'claude-switch');
     if (!fs.existsSync(pluginCacheBase)) return null;
 
@@ -562,11 +553,12 @@ function updatePluginCache() {
 
     if (versions.length === 0) return null;
 
-    // Update all cached versions with current source
+    const pkg = readJSON(path.join(sourceDir, 'package.json'));
+
     for (const ver of versions) {
         const cacheDir = path.join(pluginCacheBase, ver);
         for (const dir of ['scripts', 'commands']) {
-            const src = path.join(projectDir, dir);
+            const src = path.join(sourceDir, dir);
             const dest = path.join(cacheDir, dir);
             if (fs.existsSync(src)) {
                 if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true });
@@ -574,14 +566,56 @@ function updatePluginCache() {
             }
         }
         for (const file of ['package.json', 'CLAUDE.md', 'README.md', 'LICENSE']) {
-            const src = path.join(projectDir, file);
+            const src = path.join(sourceDir, file);
             if (fs.existsSync(src)) {
                 fs.copyFileSync(src, path.join(cacheDir, file));
             }
         }
     }
 
-    return { updated: versions, version: pkg.version };
+    return { updated: versions, version: pkg?.version || 'unknown' };
+}
+
+// Find git repo URL from marketplace config
+function getGitRepoUrl() {
+    const marketplaces = readJSON(path.join(CLAUDE_DIR, 'plugins', 'known_marketplaces.json'));
+    const entry = marketplaces?.['claude-switch'];
+    if (entry?.source?.source === 'github' && entry?.source?.repo) {
+        return `https://github.com/${entry.source.repo}.git`;
+    }
+    return null;
+}
+
+// Update plugin cache - works from source or cache (pulls from git)
+function updatePluginCache() {
+    const { execSync } = require('child_process');
+    const os = require('os');
+    const scriptDir = __dirname;
+    const projectDir = path.dirname(scriptDir);
+    const isRunningFromCache = projectDir.includes(path.join('plugins', 'cache'));
+
+    if (!isRunningFromCache) {
+        // Running from source - sync directly
+        const pkg = readJSON(path.join(projectDir, 'package.json'));
+        if (!pkg?.name || pkg.name !== 'claude-switch') return null;
+        return syncToCache(projectDir);
+    }
+
+    // Running from cache - pull latest from git
+    const repoUrl = getGitRepoUrl();
+    if (!repoUrl) {
+        throw new Error('Cannot find git repo URL in marketplace config. Add the marketplace first.');
+    }
+
+    const tmpDir = path.join(os.tmpdir(), `claude-switch-update-${Date.now()}`);
+    try {
+        execSync(`git clone --depth 1 "${repoUrl}" "${tmpDir}"`, { stdio: 'pipe' });
+        const result = syncToCache(tmpDir);
+        return result;
+    } finally {
+        // Clean up temp dir
+        try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+    }
 }
 
 // Copy directory recursively
@@ -1125,7 +1159,7 @@ try {
             break;
         default:
             console.log(`
-Claude Code Profile Switcher v1.5.0
+Claude Code Profile Switcher v1.5.2
 
 Usage:
   node profile-switcher.js <command> [args]
