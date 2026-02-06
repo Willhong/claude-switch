@@ -609,6 +609,11 @@ function syncToCache(sourceDir, options = {}) {
     if (marketplaceJson) {
         marketplaceJson.version = newVersion;
         if (marketplaceJson.metadata) marketplaceJson.metadata.version = newVersion;
+        if (Array.isArray(marketplaceJson.plugins)) {
+            for (const p of marketplaceJson.plugins) {
+                p.version = newVersion;
+            }
+        }
         writeJSON(path.join(marketplacePluginDir, 'marketplace.json'), marketplaceJson);
     }
     const pluginJson = readJSON(path.join(marketplacePluginDir, 'plugin.json'));
