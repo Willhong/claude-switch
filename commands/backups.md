@@ -11,7 +11,7 @@ Lists automatically generated backups with detailed configuration snapshots.
 ## Execution
 
 ```bash
-node ~/.claude/scripts/profile-switcher.js backups
+SCRIPT=$(ls ~/.claude/plugins/cache/claude-switch/claude-switch/*/scripts/profile-switcher.js 2>/dev/null | tail -1) && node "$SCRIPT" backups
 ```
 
 ## Output Format

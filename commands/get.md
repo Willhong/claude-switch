@@ -16,7 +16,7 @@ Examples:
 ## Execution
 
 ```bash
-node ~/.claude/scripts/profile-switcher.js get <profile-name>
+SCRIPT=$(ls ~/.claude/plugins/cache/claude-switch/claude-switch/*/scripts/profile-switcher.js 2>/dev/null | tail -1) && node "$SCRIPT" get <profile-name>
 ```
 
 ## Output Format

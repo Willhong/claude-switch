@@ -15,12 +15,12 @@ Examples:
 
 1. First check backup list:
 ```bash
-node ~/.claude/scripts/profile-switcher.js backups
+SCRIPT=$(ls ~/.claude/plugins/cache/claude-switch/claude-switch/*/scripts/profile-switcher.js 2>/dev/null | tail -1) && node "$SCRIPT" backups
 ```
 
 2. Execute restore:
 ```bash
-node ~/.claude/scripts/profile-switcher.js restore <backup-name>
+SCRIPT=$(ls ~/.claude/plugins/cache/claude-switch/claude-switch/*/scripts/profile-switcher.js 2>/dev/null | tail -1) && node "$SCRIPT" restore <backup-name>
 ```
 
 ## Pre-Restore Confirmation

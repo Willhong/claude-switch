@@ -17,11 +17,13 @@ Examples:
 ## Execution
 
 ```bash
+SCRIPT=$(ls ~/.claude/plugins/cache/claude-switch/claude-switch/*/scripts/profile-switcher.js 2>/dev/null | tail -1)
+
 # Update current profile
-node ~/.claude/scripts/profile-switcher.js export
+node "$SCRIPT" export
 
 # Save as new profile
-node ~/.claude/scripts/profile-switcher.js export <profile-name>
+node "$SCRIPT" export <profile-name>
 ```
 
 ## Post-Export Message

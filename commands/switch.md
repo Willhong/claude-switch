@@ -17,12 +17,12 @@ Examples:
 
 1. First verify the profile exists:
 ```bash
-node ~/.claude/scripts/profile-switcher.js list
+SCRIPT=$(ls ~/.claude/plugins/cache/claude-switch/claude-switch/*/scripts/profile-switcher.js 2>/dev/null | tail -1) && node "$SCRIPT" list
 ```
 
 2. Execute profile switch:
 ```bash
-node ~/.claude/scripts/profile-switcher.js switch <profile-name>
+SCRIPT=$(ls ~/.claude/plugins/cache/claude-switch/claude-switch/*/scripts/profile-switcher.js 2>/dev/null | tail -1) && node "$SCRIPT" switch <profile-name>
 ```
 
 ## Post-Switch Message

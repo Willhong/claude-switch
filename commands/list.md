@@ -5,12 +5,7 @@ Lists all profiles and shows the currently active profile.
 ## Execution
 
 ```bash
-node ~/.claude/profiles/../scripts/profile-switcher.js list 2>/dev/null || node "$(dirname "$(realpath "$0")")/../scripts/profile-switcher.js" list
-```
-
-Or after plugin installation:
-```bash
-node ~/.claude/plugins/cache/*/claude-switch/*/scripts/profile-switcher.js list
+SCRIPT=$(ls ~/.claude/plugins/cache/claude-switch/claude-switch/*/scripts/profile-switcher.js 2>/dev/null | tail -1) && node "$SCRIPT" list
 ```
 
 ## Output Format

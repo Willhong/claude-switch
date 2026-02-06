@@ -59,20 +59,22 @@ Options:
 After confirming user's desired options:
 
 ```bash
+SCRIPT=$(ls ~/.claude/plugins/cache/claude-switch/claude-switch/*/scripts/profile-switcher.js 2>/dev/null | tail -1)
+
 # Basic creation
-node ~/.claude/scripts/profile-switcher.js create <name>
+node "$SCRIPT" create <name>
 
 # Copy specific items
-node ~/.claude/scripts/profile-switcher.js create <name> --copy=plugins,hooks,statusline
+node "$SCRIPT" create <name> --copy=plugins,hooks,statusline
 
 # Copy all current settings
-node ~/.claude/scripts/profile-switcher.js create <name> --from-current
+node "$SCRIPT" create <name> --from-current
 
 # Clean profile
-node ~/.claude/scripts/profile-switcher.js create <name> --clean
+node "$SCRIPT" create <name> --clean
 
 # Add description
-node ~/.claude/scripts/profile-switcher.js create <name> --desc="description"
+node "$SCRIPT" create <name> --desc="description"
 ```
 
 ## Post-Creation Message

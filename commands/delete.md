@@ -16,12 +16,12 @@ Examples:
 
 1. First check profile list:
 ```bash
-node ~/.claude/scripts/profile-switcher.js list
+SCRIPT=$(ls ~/.claude/plugins/cache/claude-switch/claude-switch/*/scripts/profile-switcher.js 2>/dev/null | tail -1) && node "$SCRIPT" list
 ```
 
 2. Execute deletion:
 ```bash
-node ~/.claude/scripts/profile-switcher.js delete <profile-name>
+SCRIPT=$(ls ~/.claude/plugins/cache/claude-switch/claude-switch/*/scripts/profile-switcher.js 2>/dev/null | tail -1) && node "$SCRIPT" delete <profile-name>
 ```
 
 ## Pre-Delete Confirmation
