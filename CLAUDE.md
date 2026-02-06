@@ -53,6 +53,15 @@ Supported commands:
 4. Update `active-manifest.json`
 5. Prompt user to restart
 
+## Version Bump
+
+When bumping the version, update ALL of these files:
+
+1. `package.json` — `version` field
+2. `.claude-plugin/plugin.json` — `version` field
+3. `.claude-plugin/marketplace.json` — `version` field (3 occurrences: `metadata.version`, `plugins[0].version`, top-level `version`)
+4. `scripts/profile-switcher.js` — `@version` in JSDoc header and help text string (`Claude Code Profile Switcher v<version>`)
+
 ## Notes
 
 - Restart Claude Code after switching
