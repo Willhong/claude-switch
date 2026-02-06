@@ -1,6 +1,6 @@
 {
   "name": "claude-switch",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Profile switching system for Claude Code",
   "main": "scripts/profile-switcher.js",
   "scripts": {
