@@ -3,7 +3,7 @@
  * Claude Code Profile Switcher
  * Profile CRUD and switching logic
  *
- * @version 1.7.2
+ * @version 1.8.0
  * @author Hong
  */
 
@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const CLAUDE_DIR = path.join(process.env.HOME || process.env.USERPROFILE, '.claude');
+const CLAUDE_DIR = process.env.CLAUDE_DIR_OVERRIDE || path.join(process.env.HOME || process.env.USERPROFILE, '.claude');
 const PROFILES_DIR = path.join(CLAUDE_DIR, 'profiles');
 const BACKUPS_DIR = path.join(PROFILES_DIR, '.backups');
 const PROFILES_JSON = path.join(PROFILES_DIR, 'profiles.json');
@@ -19,7 +19,8 @@ const SETTINGS_JSON = path.join(CLAUDE_DIR, 'settings.json');
 const CLAUDE_MD = path.join(CLAUDE_DIR, 'CLAUDE.md');
 const ACTIVE_MANIFEST = path.join(CLAUDE_DIR, 'active-manifest.json');
 // MCP settings stored in ~/.claude.json
-const CLAUDE_JSON = path.join(process.env.HOME || process.env.USERPROFILE, '.claude.json');
+const CLAUDE_JSON =
+    process.env.CLAUDE_JSON_OVERRIDE || path.join(process.env.HOME || process.env.USERPROFILE, '.claude.json');
 
 // Directories managed via symlinks
 const SYMLINK_DIRS = ['commands', 'skills', 'agents'];
@@ -40,6 +41,26 @@ function ensureDir(dir) {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
     }
+}
+
+// Sanitize description string
+function sanitizeDescription(desc) {
+    if (typeof desc !== 'string') return '';
+    // Reject null bytes
+    if (desc.includes('\0')) {
+        throw new Error('Description cannot contain null bytes');
+    }
+    // Strip control characters (keep spaces)
+    let cleaned = desc.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+    // Also strip newlines and tabs
+    cleaned = cleaned.replace(/[\n\r\t]/g, ' ');
+    // Trim whitespace
+    cleaned = cleaned.trim();
+    // Cap at 200 characters
+    if (cleaned.length > 200) {
+        cleaned = cleaned.substring(0, 200);
+    }
+    return cleaned;
 }
 
 function readJSON(filepath) {
@@ -68,7 +89,9 @@ function writeFileAtomic(filepath, content) {
         fs.renameSync(tmpFile, filepath);
     } catch (err) {
         // Clean up temp file on failure
-        try { fs.unlinkSync(tmpFile); } catch {}
+        try {
+            fs.unlinkSync(tmpFile);
+        } catch {}
         throw err;
     }
 }
@@ -97,13 +120,17 @@ function acquireLock() {
                     }
                 } catch {
                     // Can't read lock file - remove it
-                    try { fs.unlinkSync(LOCK_FILE); } catch {}
+                    try {
+                        fs.unlinkSync(LOCK_FILE);
+                    } catch {}
                     continue;
                 }
                 // Wait and retry
                 const waitMs = 50 + Math.random() * 100;
                 const waitUntil = Date.now() + waitMs;
-                while (Date.now() < waitUntil) { /* spin wait */ }
+                while (Date.now() < waitUntil) {
+                    /* spin wait */
+                }
             } else {
                 throw err;
             }
@@ -113,7 +140,9 @@ function acquireLock() {
 }
 
 function releaseLock() {
-    try { fs.unlinkSync(LOCK_FILE); } catch {}
+    try {
+        fs.unlinkSync(LOCK_FILE);
+    } catch {}
 }
 
 // Execute a function while holding the lock
@@ -204,7 +233,13 @@ function replaceJunction(linkPath, newTarget) {
     // Clean up leftover temp files from previous failed attempts
     for (const tmp of [tempLink, oldLink]) {
         if (isSymlink(tmp)) {
-            try { fs.rmdirSync(tmp); } catch { try { fs.unlinkSync(tmp); } catch {} }
+            try {
+                fs.rmdirSync(tmp);
+            } catch {
+                try {
+                    fs.unlinkSync(tmp);
+                } catch {}
+            }
         }
     }
 
@@ -216,7 +251,9 @@ function replaceJunction(linkPath, newTarget) {
         fs.renameSync(absLink, oldLink);
     } catch (err) {
         // Cleanup temp and re-throw
-        try { fs.rmdirSync(tempLink); } catch {}
+        try {
+            fs.rmdirSync(tempLink);
+        } catch {}
         throw err;
     }
 
@@ -225,13 +262,19 @@ function replaceJunction(linkPath, newTarget) {
         fs.renameSync(tempLink, absLink);
     } catch (err) {
         // Rollback: restore old junction
-        try { fs.renameSync(oldLink, absLink); } catch {}
-        try { fs.rmdirSync(tempLink); } catch {}
+        try {
+            fs.renameSync(oldLink, absLink);
+        } catch {}
+        try {
+            fs.rmdirSync(tempLink);
+        } catch {}
         throw err;
     }
 
     // 4. Best-effort cleanup of old junction
-    try { fs.rmdirSync(oldLink); } catch {}
+    try {
+        fs.rmdirSync(oldLink);
+    } catch {}
 }
 
 // Profile directory paths
@@ -249,10 +292,12 @@ function getClaudeComponentDir(component) {
 
 // Profile metadata management
 function loadProfilesMeta() {
-    return readJSON(PROFILES_JSON) || {
-        activeProfile: 'current',
-        profiles: []
-    };
+    return (
+        readJSON(PROFILES_JSON) || {
+            activeProfile: 'current',
+            profiles: []
+        }
+    );
 }
 
 function saveProfilesMeta(meta) {
@@ -280,7 +325,7 @@ function listProfiles() {
                     const targetDir = getProfileComponentDir(entry.name, dir);
                     try {
                         const items = fs.readdirSync(targetDir, { withFileTypes: true });
-                        componentCounts[dir] = items.filter(e => e.isDirectory() || e.name.endsWith('.md')).length;
+                        componentCounts[dir] = items.filter((e) => e.isDirectory() || e.name.endsWith('.md')).length;
                     } catch {
                         componentCounts[dir] = 0;
                     }
@@ -292,7 +337,7 @@ function listProfiles() {
                     active: meta.activeProfile === entry.name,
                     createdAt: profile.createdAt,
                     pluginCount: Object.keys(profile.settings?.enabledPlugins || {}).filter(
-                        k => profile.settings.enabledPlugins[k]
+                        (k) => profile.settings.enabledPlugins[k]
                     ).length,
                     hasHooks: Object.keys(profile.settings?.hooks || {}).length > 0,
                     hasStatusLine: !!profile.settings?.statusLine,
@@ -309,7 +354,9 @@ function listProfiles() {
 // Validate plugin key format (plugin@marketplace)
 function validatePluginKey(key) {
     if (!PLUGIN_KEY_REGEX.test(key)) {
-        throw new Error(`Invalid plugin key '${key}'. Expected format: plugin@marketplace (alphanumeric, hyphens, underscores only)`);
+        throw new Error(
+            `Invalid plugin key '${key}'. Expected format: plugin@marketplace (alphanumeric, hyphens, underscores only)`
+        );
     }
 }
 
@@ -329,12 +376,16 @@ function resolveTargetProfiles(args) {
         if (allProfiles.length === 0) {
             throw new Error('No profiles found. Run init first.');
         }
-        return allProfiles.map(p => p.name);
+        return allProfiles.map((p) => p.name);
     }
 
-    const profilesArg = args.find(a => a.startsWith('--profiles='));
+    const profilesArg = args.find((a) => a.startsWith('--profiles='));
     if (profilesArg) {
-        const names = profilesArg.slice('--profiles='.length).split(',').map(s => s.trim()).filter(Boolean);
+        const names = profilesArg
+            .slice('--profiles='.length)
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
         if (names.length === 0) {
             throw new Error('--profiles= requires at least one profile name');
         }
@@ -443,8 +494,9 @@ function backupCurrentSettings() {
 function cleanOldBackups(maxCount) {
     if (!fs.existsSync(BACKUPS_DIR)) return;
 
-    const backups = fs.readdirSync(BACKUPS_DIR)
-        .filter(f => f.startsWith('backup-'))
+    const backups = fs
+        .readdirSync(BACKUPS_DIR)
+        .filter((f) => f.startsWith('backup-'))
         .sort()
         .reverse();
 
@@ -482,7 +534,10 @@ function syncCurrentSettingsToActiveProfile() {
     profile.updatedAt = new Date().toISOString();
     try {
         saveProfile(activeProfileName, profile);
-    } catch (e) { /* non-fatal: settings sync failure should not block CLAUDE.md sync */ }
+        // eslint-disable-next-line no-unused-vars
+    } catch (_e) {
+        /* non-fatal: settings sync failure should not block CLAUDE.md sync */
+    }
 
     // Sync CLAUDE.md (runs regardless of settings sync success)
     const profileDir = getProfileDir(activeProfileName);
@@ -493,7 +548,10 @@ function syncCurrentSettingsToActiveProfile() {
         } else if (fs.existsSync(profileClaudeMd)) {
             fs.unlinkSync(profileClaudeMd);
         }
-    } catch (e) { /* non-fatal */ }
+        // eslint-disable-next-line no-unused-vars
+    } catch (_e) {
+        /* non-fatal */
+    }
 }
 
 // Export current settings to profile
@@ -539,7 +597,6 @@ function exportCurrentToProfile(name, description = '') {
 // Switch symlinks
 function switchSymlinks(profileName) {
     const results = [];
-    const profileDir = getProfileDir(profileName);
 
     for (const dir of SYMLINK_DIRS) {
         const claudeDir = getClaudeComponentDir(dir);
@@ -567,6 +624,35 @@ function switchSymlinks(profileName) {
             } else {
                 createSymlink(targetDir, claudeDir);
             }
+
+            // Validate symlink resolves correctly
+            try {
+                if (IS_WINDOWS) {
+                    // Windows: use lstatSync to check junction exists, readlinkSync to verify target
+                    const stat = fs.lstatSync(claudeDir);
+                    if (!stat.isSymbolicLink()) {
+                        console.error(`Warning: ${claudeDir} is not a symlink after switch`);
+                    } else {
+                        const resolvedTarget = path.resolve(fs.readlinkSync(claudeDir));
+                        const expectedTarget = path.resolve(targetDir);
+                        if (resolvedTarget !== expectedTarget) {
+                            console.error(
+                                `Warning: ${claudeDir} points to ${resolvedTarget}, expected ${expectedTarget}`
+                            );
+                        }
+                    }
+                } else {
+                    // Unix: use lstatSync + readlinkSync for validation
+                    const stat = fs.lstatSync(claudeDir);
+                    if (!stat.isSymbolicLink()) {
+                        console.error(`Warning: ${claudeDir} is not a symlink after switch`);
+                    }
+                }
+            } catch (validationErr) {
+                // Non-fatal: log warning but don't abort the switch
+                console.error(`Warning: symlink validation failed for ${claudeDir}: ${validationErr.message}`);
+            }
+
             results.push({ dir, action: 'switched', link: claudeDir, target: targetDir });
         } catch (err) {
             results.push({ dir, action: 'error', error: err.message });
@@ -589,7 +675,8 @@ function switchToProfile(name) {
         // 1.5. Sync current settings.json to active profile before switching away
         try {
             syncCurrentSettingsToActiveProfile();
-        } catch (e) {
+            // eslint-disable-next-line no-unused-vars
+        } catch (_e) {
             // Non-fatal: continue with switch even if sync fails
         }
 
@@ -668,9 +755,9 @@ function switchToProfile(name) {
             const symlinkResults = switchSymlinks(name);
 
             // Check for symlink errors
-            const symlinkErrors = symlinkResults.filter(r => r.action === 'error');
+            const symlinkErrors = symlinkResults.filter((r) => r.action === 'error');
             if (symlinkErrors.length > 0) {
-                throw new Error(`Symlink errors: ${symlinkErrors.map(e => `${e.dir}: ${e.error}`).join('; ')}`);
+                throw new Error(`Symlink errors: ${symlinkErrors.map((e) => `${e.dir}: ${e.error}`).join('; ')}`);
             }
 
             // 6. Update active-manifest.json
@@ -694,7 +781,7 @@ function switchToProfile(name) {
                 const targetDir = getProfileComponentDir(name, dir);
                 try {
                     const entries = fs.readdirSync(targetDir, { withFileTypes: true });
-                    componentCounts[dir] = entries.filter(e => e.isDirectory() || e.name.endsWith('.md')).length;
+                    componentCounts[dir] = entries.filter((e) => e.isDirectory() || e.name.endsWith('.md')).length;
                 } catch {
                     componentCounts[dir] = 0;
                 }
@@ -706,7 +793,7 @@ function switchToProfile(name) {
                 backup: backupPath,
                 settings: {
                     plugins: Object.keys(profile.settings.enabledPlugins || {}).filter(
-                        k => profile.settings.enabledPlugins[k]
+                        (k) => profile.settings.enabledPlugins[k]
                     ).length,
                     hooks: Object.keys(profile.settings.hooks || {}).length,
                     hasStatusLine: !!profile.settings.statusLine,
@@ -737,8 +824,12 @@ function syncToCache(sourceDir, options = {}) {
     const pluginCacheBase = path.join(CLAUDE_DIR, 'plugins', 'cache', 'claude-switch', 'claude-switch');
     if (!fs.existsSync(pluginCacheBase)) return null;
 
-    const versions = fs.readdirSync(pluginCacheBase).filter(v => {
-        try { return fs.statSync(path.join(pluginCacheBase, v)).isDirectory(); } catch { return false; }
+    const versions = fs.readdirSync(pluginCacheBase).filter((v) => {
+        try {
+            return fs.statSync(path.join(pluginCacheBase, v)).isDirectory();
+        } catch {
+            return false;
+        }
     });
 
     if (versions.length === 0) return null;
@@ -842,7 +933,13 @@ function updatePluginCache() {
         if (!pkg?.name || pkg.name !== 'claude-switch') return null;
         let gitSha = null;
         try {
-            gitSha = execSync('git rev-parse HEAD', { cwd: projectDir, stdio: 'pipe' }).toString().trim();
+            gitSha = execSync('git rev-parse HEAD', {
+                cwd: projectDir,
+                stdio: 'pipe',
+                env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+            })
+                .toString()
+                .trim();
         } catch {}
         return syncToCache(projectDir, { gitCommitSha: gitSha });
     }
@@ -855,14 +952,26 @@ function updatePluginCache() {
 
     const tmpDir = path.join(os.tmpdir(), `claude-switch-update-${Date.now()}`);
     try {
-        execSync(`git clone --depth 1 "${repoUrl}" "${tmpDir}"`, { stdio: 'pipe' });
+        execSync(`git clone --depth 1 "${repoUrl}" "${tmpDir}"`, {
+            stdio: 'pipe',
+            timeout: 30000,
+            env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+        });
         let gitSha = null;
         try {
-            gitSha = execSync('git rev-parse HEAD', { cwd: tmpDir, stdio: 'pipe' }).toString().trim();
+            gitSha = execSync('git rev-parse HEAD', {
+                cwd: tmpDir,
+                stdio: 'pipe',
+                env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+            })
+                .toString()
+                .trim();
         } catch {}
         return syncToCache(tmpDir, { gitCommitSha: gitSha });
     } finally {
-        try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+        try {
+            fs.rmSync(tmpDir, { recursive: true });
+        } catch {}
     }
 }
 
@@ -906,7 +1015,7 @@ function ensurePluginInstalled(pluginKey) {
     }
 
     // Find matching plugin entry
-    const pluginEntry = (marketplaceJson.plugins || []).find(p => p.name === pluginName);
+    const pluginEntry = (marketplaceJson.plugins || []).find((p) => p.name === pluginName);
     if (!pluginEntry) {
         throw new Error(`Plugin '${pluginName}' not found in marketplace '${marketplaceName}'`);
     }
@@ -925,13 +1034,15 @@ function ensurePluginInstalled(pluginKey) {
     // Register in installed_plugins.json
     const installedData = readJSON(INSTALLED_PLUGINS_JSON) || { plugins: {} };
     if (!installedData.plugins) installedData.plugins = {};
-    installedData.plugins[pluginKey] = [{
-        scope: 'user',
-        installPath: cachePath,
-        version: version,
-        installedAt: new Date().toISOString(),
-        lastUpdated: new Date().toISOString()
-    }];
+    installedData.plugins[pluginKey] = [
+        {
+            scope: 'user',
+            installPath: cachePath,
+            version: version,
+            installedAt: new Date().toISOString(),
+            lastUpdated: new Date().toISOString()
+        }
+    ];
     writeJSON(INSTALLED_PLUGINS_JSON, installedData);
 
     return { installed: true, version, installPath: cachePath };
@@ -984,8 +1095,8 @@ function installAll(pluginKey, args) {
         return profileResults;
     });
 
-    const enabled = results.filter(r => r.status === 'enabled').length;
-    const skipped = results.filter(r => r.status === 'skipped').length;
+    const enabled = results.filter((r) => r.status === 'enabled').length;
+    const skipped = results.filter((r) => r.status === 'skipped').length;
 
     return {
         success: true,
@@ -1045,8 +1156,8 @@ function uninstallAll(pluginKey, args) {
         return profileResults;
     });
 
-    const disabled = results.filter(r => r.status === 'disabled').length;
-    const skipped = results.filter(r => r.status === 'skipped').length;
+    const disabled = results.filter((r) => r.status === 'disabled').length;
+    const skipped = results.filter((r) => r.status === 'skipped').length;
 
     return {
         success: true,
@@ -1070,7 +1181,7 @@ function spread(type, name, args) {
 
     // Parse --force flag and strip from args before resolveTargetProfiles
     const force = args.includes('--force');
-    const filteredArgs = args.filter(a => a !== '--force');
+    const filteredArgs = args.filter((a) => a !== '--force');
 
     // Resolve target profiles
     const targetProfiles = resolveTargetProfiles(filteredArgs);
@@ -1080,14 +1191,17 @@ function spread(type, name, args) {
     const activeProfile = meta.activeProfile;
 
     // Exclude active profile from targets
-    const profilesArg = filteredArgs.find(a => a.startsWith('--profiles='));
+    const profilesArg = filteredArgs.find((a) => a.startsWith('--profiles='));
     if (profilesArg) {
-        const explicitNames = profilesArg.slice('--profiles='.length).split(',').map(s => s.trim());
+        const explicitNames = profilesArg
+            .slice('--profiles='.length)
+            .split(',')
+            .map((s) => s.trim());
         if (explicitNames.includes(activeProfile)) {
             throw new Error(`Cannot spread to active profile '${activeProfile}' (it is the source)`);
         }
     }
-    const targets = targetProfiles.filter(p => p !== activeProfile);
+    const targets = targetProfiles.filter((p) => p !== activeProfile);
     if (targets.length === 0) {
         throw new Error('No target profiles after excluding active profile');
     }
@@ -1157,7 +1271,11 @@ function spread(type, name, args) {
                     const exists = fs.existsSync(targetPath);
 
                     if (exists && !force) {
-                        results.push({ profile: profileName, status: 'skipped', note: 'Already exists (use --force to overwrite)' });
+                        results.push({
+                            profile: profileName,
+                            status: 'skipped',
+                            note: 'Already exists (use --force to overwrite)'
+                        });
                         continue;
                     }
 
@@ -1191,7 +1309,11 @@ function spread(type, name, args) {
                         if (!profile.settings.hooks) profile.settings.hooks = {};
                         exists = profile.settings.hooks[name] !== undefined;
                         if (exists && !force) {
-                            results.push({ profile: profileName, status: 'skipped', note: 'Already exists (use --force to overwrite)' });
+                            results.push({
+                                profile: profileName,
+                                status: 'skipped',
+                                note: 'Already exists (use --force to overwrite)'
+                            });
                             continue;
                         }
                         profile.settings.hooks[name] = clonedValue;
@@ -1199,7 +1321,11 @@ function spread(type, name, args) {
                         if (!profile.mcpServers) profile.mcpServers = {};
                         exists = profile.mcpServers[name] !== undefined;
                         if (exists && !force) {
-                            results.push({ profile: profileName, status: 'skipped', note: 'Already exists (use --force to overwrite)' });
+                            results.push({
+                                profile: profileName,
+                                status: 'skipped',
+                                note: 'Already exists (use --force to overwrite)'
+                            });
                             continue;
                         }
                         profile.mcpServers[name] = clonedValue;
@@ -1208,7 +1334,11 @@ function spread(type, name, args) {
                         if (!profile.settings.env) profile.settings.env = {};
                         exists = profile.settings.env[name] !== undefined;
                         if (exists && !force) {
-                            results.push({ profile: profileName, status: 'skipped', note: 'Already exists (use --force to overwrite)' });
+                            results.push({
+                                profile: profileName,
+                                status: 'skipped',
+                                note: 'Already exists (use --force to overwrite)'
+                            });
                             continue;
                         }
                         profile.settings.env[name] = clonedValue;
@@ -1236,14 +1366,22 @@ function spread(type, name, args) {
                     if (type === 'statusline') {
                         exists = profile.settings.statusLine != null;
                         if (exists && !force) {
-                            results.push({ profile: profileName, status: 'skipped', note: 'Already set (use --force to overwrite)' });
+                            results.push({
+                                profile: profileName,
+                                status: 'skipped',
+                                note: 'Already set (use --force to overwrite)'
+                            });
                             continue;
                         }
                         profile.settings.statusLine = clonedValue;
                     } else if (type === 'permissions') {
                         exists = profile.settings.permissions != null;
                         if (exists && !force) {
-                            results.push({ profile: profileName, status: 'skipped', note: 'Already set (use --force to overwrite)' });
+                            results.push({
+                                profile: profileName,
+                                status: 'skipped',
+                                note: 'Already set (use --force to overwrite)'
+                            });
                             continue;
                         }
                         profile.settings.permissions = clonedValue;
@@ -1252,7 +1390,11 @@ function spread(type, name, args) {
                         const targetClaudeMd = path.join(getProfileDir(profileName), 'CLAUDE.md');
                         exists = fs.existsSync(targetClaudeMd);
                         if (exists && !force) {
-                            results.push({ profile: profileName, status: 'skipped', note: 'Already exists (use --force to overwrite)' });
+                            results.push({
+                                profile: profileName,
+                                status: 'skipped',
+                                note: 'Already exists (use --force to overwrite)'
+                            });
                             continue;
                         }
                         fs.copyFileSync(sourceValue, targetClaudeMd);
@@ -1282,9 +1424,9 @@ function spread(type, name, args) {
         return results;
     });
 
-    const copied = profileResults.filter(r => r.status === 'copied').length;
-    const overwritten = profileResults.filter(r => r.status === 'overwritten').length;
-    const skipped = profileResults.filter(r => r.status === 'skipped').length;
+    const copied = profileResults.filter((r) => r.status === 'copied').length;
+    const overwritten = profileResults.filter((r) => r.status === 'overwritten').length;
+    const skipped = profileResults.filter((r) => r.status === 'skipped').length;
 
     return {
         success: true,
@@ -1312,9 +1454,6 @@ const COPYABLE_ITEMS = {
     agents: 'agents'
 };
 
-const SETTING_ITEMS = ['plugins', 'hooks', 'statusline', 'env', 'permissions'];
-const COMPONENT_ITEMS = ['commands', 'skills', 'agents'];
-
 // Spread command types
 const SPREAD_COMPONENT_TYPES = ['commands', 'skills', 'agents'];
 const SPREAD_KEYED_TYPES = ['hooks', 'mcp', 'env'];
@@ -1336,7 +1475,12 @@ function _createProfile(name, options = {}) {
         throw new Error('Profile name can only contain letters, numbers, hyphens, and underscores');
     }
 
-    const { fromCurrent = false, description = '', clean = false, copy = [] } = options;
+    if (name.length > 50) {
+        throw new Error('Profile name cannot exceed 50 characters');
+    }
+
+    const { fromCurrent = false, description: rawDescription = '', clean = false, copy = [] } = options;
+    const description = sanitizeDescription(rawDescription);
 
     // Parse copy option: 'all' or individual items array
     let itemsToCopy = [];
@@ -1345,10 +1489,12 @@ function _createProfile(name, options = {}) {
             itemsToCopy = Object.keys(COPYABLE_ITEMS);
         } else {
             // Filter valid items only
-            itemsToCopy = copy.filter(item => COPYABLE_ITEMS[item]);
-            const invalid = copy.filter(item => !COPYABLE_ITEMS[item]);
+            itemsToCopy = copy.filter((item) => COPYABLE_ITEMS[item]);
+            const invalid = copy.filter((item) => !COPYABLE_ITEMS[item]);
             if (invalid.length > 0) {
-                throw new Error(`Invalid copy items: ${invalid.join(', ')}. Valid items: ${Object.keys(COPYABLE_ITEMS).join(', ')}, all`);
+                throw new Error(
+                    `Invalid copy items: ${invalid.join(', ')}. Valid items: ${Object.keys(COPYABLE_ITEMS).join(', ')}, all`
+                );
             }
         }
     } else if (fromCurrent) {
@@ -1357,7 +1503,6 @@ function _createProfile(name, options = {}) {
     }
     // clean or default keeps empty array
 
-    let profile;
     const profileDir = getProfileDir(name);
     ensureDir(profileDir);
 
@@ -1366,7 +1511,7 @@ function _createProfile(name, options = {}) {
     const currentMcpServers = loadMcpServers();
 
     // Default empty profile structure
-    profile = {
+    const profile = {
         name: name,
         description: description || (itemsToCopy.length > 0 ? `Copied: ${itemsToCopy.join(', ')}` : 'Custom profile'),
         createdAt: new Date().toISOString(),
@@ -1457,7 +1602,7 @@ function _createProfile(name, options = {}) {
         const targetDir = getProfileComponentDir(name, dir);
         try {
             const entries = fs.readdirSync(targetDir, { withFileTypes: true });
-            componentCounts[dir] = entries.filter(e => e.isDirectory() || e.name.endsWith('.md')).length;
+            componentCounts[dir] = entries.filter((e) => e.isDirectory() || e.name.endsWith('.md')).length;
         } catch {
             componentCounts[dir] = 0;
         }
@@ -1494,7 +1639,7 @@ function _deleteProfile(name) {
     fs.rmSync(profileDir, { recursive: true });
 
     // Update profiles.json list
-    meta.profiles = meta.profiles.filter(p => p !== name);
+    meta.profiles = meta.profiles.filter((p) => p !== name);
     saveProfilesMeta(meta);
 
     return { success: true, message: `Profile '${name}' deleted` };
@@ -1523,6 +1668,10 @@ function _renameProfile(oldName, newName) {
         throw new Error('Profile name can only contain letters, numbers, hyphens, and underscores');
     }
 
+    if (newName.length > 50) {
+        throw new Error('Profile name cannot exceed 50 characters');
+    }
+
     const oldDir = path.join(PROFILES_DIR, oldName);
     const newDir = path.join(PROFILES_DIR, newName);
 
@@ -1536,7 +1685,7 @@ function _renameProfile(oldName, newName) {
 
     // Update profiles.json
     const meta = loadProfilesMeta();
-    meta.profiles = meta.profiles.map(p => p === oldName ? newName : p);
+    meta.profiles = meta.profiles.map((p) => (p === oldName ? newName : p));
     if (meta.activeProfile === oldName) {
         meta.activeProfile = newName;
     }
@@ -1612,11 +1761,12 @@ function listBackups() {
         return [];
     }
 
-    return fs.readdirSync(BACKUPS_DIR)
-        .filter(f => f.startsWith('backup-'))
+    return fs
+        .readdirSync(BACKUPS_DIR)
+        .filter((f) => f.startsWith('backup-'))
         .sort()
         .reverse()
-        .map(name => {
+        .map((name) => {
             const backupDir = path.join(BACKUPS_DIR, name);
             const meta = readJSON(path.join(backupDir, 'meta.json'));
             const settings = readJSON(path.join(backupDir, 'settings.json'));
@@ -1800,12 +1950,17 @@ try {
         case 'create':
             if (!args[0]) throw new Error('Profile name required');
             // Parse --copy= option
-            const copyArg = args.find(a => a.startsWith('--copy='));
-            const copyItems = copyArg ? copyArg.slice(7).split(',').map(s => s.trim()) : [];
+            const copyArg = args.find((a) => a.startsWith('--copy='));
+            const copyItems = copyArg
+                ? copyArg
+                      .slice(7)
+                      .split(',')
+                      .map((s) => s.trim())
+                : [];
             result = createProfile(args[0], {
                 fromCurrent: args.includes('--from-current'),
                 clean: args.includes('--clean'),
-                description: args.find(a => a.startsWith('--desc='))?.slice(7) || '',
+                description: sanitizeDescription(args.find((a) => a.startsWith('--desc='))?.slice(7) || ''),
                 copy: copyItems
             });
             break;
@@ -1845,7 +2000,10 @@ try {
             result = uninstallAll(args[0], args.slice(1));
             break;
         case 'spread': {
-            if (!args[0]) throw new Error('Type required (commands, skills, agents, hooks, mcp, env, statusline, permissions, claudemd)');
+            if (!args[0])
+                throw new Error(
+                    'Type required (commands, skills, agents, hooks, mcp, env, statusline, permissions, claudemd)'
+                );
             const spreadType = args[0];
             if (!ALL_SPREAD_TYPES.includes(spreadType)) {
                 throw new Error(`Invalid type '${spreadType}'. Valid: ${ALL_SPREAD_TYPES.join(', ')}`);
@@ -1856,7 +2014,8 @@ try {
                 spreadArgs = args.slice(1);
             } else {
                 spreadName = args[1];
-                if (!spreadName || spreadName.startsWith('--')) throw new Error(`Name required for '${spreadType}' type`);
+                if (!spreadName || spreadName.startsWith('--'))
+                    throw new Error(`Name required for '${spreadType}' type`);
                 spreadArgs = args.slice(2);
             }
             result = spread(spreadType, spreadName, spreadArgs);
@@ -1885,7 +2044,9 @@ try {
             // Gather version sources
             const installedInfo = readJSON(path.join(CLAUDE_DIR, 'plugins', 'installed_plugins.json'));
             const installedEntry = installedInfo?.plugins?.[SELF_PLUGIN_KEY]?.[0];
-            const mktPluginJson = readJSON(path.join(CLAUDE_DIR, 'plugins', 'marketplaces', 'claude-switch', '.claude-plugin', 'plugin.json'));
+            const mktPluginJson = readJSON(
+                path.join(CLAUDE_DIR, 'plugins', 'marketplaces', 'claude-switch', '.claude-plugin', 'plugin.json')
+            );
             result = {
                 version: selfPkg.version || 'unknown',
                 source: __dirname,
@@ -1899,7 +2060,9 @@ try {
         case 'update':
             result = updatePluginCache();
             if (!result) {
-                throw new Error('Cannot update: either running from plugin cache (no source to sync from) or plugin cache not found');
+                throw new Error(
+                    'Cannot update: either running from plugin cache (no source to sync from) or plugin cache not found'
+                );
             }
             result.success = true;
             const removedStr = result.removed.length > 0 ? ` Removed old: ${result.removed.join(', ')}` : '';
@@ -1907,7 +2070,7 @@ try {
             break;
         default:
             console.log(`
-Claude Code Profile Switcher v1.7.2
+Claude Code Profile Switcher v1.8.0
 
 Usage:
   node profile-switcher.js <command> [args]

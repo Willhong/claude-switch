@@ -7,8 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync, fork } = require('child_process');
-const crypto = require('crypto');
+const { execSync } = require('child_process');
 
 const SCRIPT = path.join(__dirname, '..', 'scripts', 'profile-switcher.js');
 const CLAUDE_DIR = path.join(process.env.HOME || process.env.USERPROFILE, '.claude');
@@ -21,7 +20,7 @@ const testProfiles = []; // track profiles to clean up
 
 function run(cmd) {
     try {
-        return { ok: true, output: JSON.parse(execSync(`node "${SCRIPT}" ${cmd}`, { encoding: 'utf-8' }) )};
+        return { ok: true, output: JSON.parse(execSync(`node "${SCRIPT}" ${cmd}`, { encoding: 'utf-8' })) };
     } catch (err) {
         const stderr = err.stderr?.toString() || '';
         const stdout = err.stdout?.toString() || '';
@@ -46,13 +45,19 @@ function assert(condition, name, detail) {
 function cleanup() {
     // Remove test profiles
     for (const name of testProfiles) {
-        try { run(`delete ${name}`); } catch {}
+        try {
+            run(`delete ${name}`);
+        } catch {}
         // Force remove if delete fails (e.g. active profile)
         const dir = path.join(PROFILES_DIR, name);
-        try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+        try {
+            fs.rmSync(dir, { recursive: true, force: true });
+        } catch {}
     }
     // Remove stale lock
-    try { fs.unlinkSync(LOCK_FILE); } catch {}
+    try {
+        fs.unlinkSync(LOCK_FILE);
+    } catch {}
 }
 
 // ============================================================
@@ -83,7 +88,7 @@ function testAtomicWrites() {
 
     // Check no temp files left behind
     const dir = path.join(PROFILES_DIR, testProfile);
-    const tmpFiles = fs.readdirSync(dir).filter(f => f.startsWith('.tmp-'));
+    const tmpFiles = fs.readdirSync(dir).filter((f) => f.startsWith('.tmp-'));
     assert(tmpFiles.length === 0, 'No temp files left behind');
 
     // Cleanup
@@ -169,10 +174,21 @@ function testNoCommandInjection() {
 
     const scriptContent = fs.readFileSync(SCRIPT, 'utf-8');
 
-    assert(!scriptContent.includes('execSync'), 'No execSync in codebase');
-    assert(!scriptContent.includes('child_process'), 'No child_process import');
+    // execSync/child_process should ONLY appear inside updatePluginCache()
+    // Remove that function and verify they don't appear elsewhere
+    const updateFnStart = scriptContent.indexOf('function updatePluginCache()');
+    const afterUpdateFn = scriptContent.indexOf('\nfunction ', updateFnStart + 1);
+    const contentWithoutUpdate =
+        afterUpdateFn > 0
+            ? scriptContent.slice(0, updateFnStart) + scriptContent.slice(afterUpdateFn)
+            : scriptContent.slice(0, updateFnStart);
+
+    assert(!contentWithoutUpdate.includes('execSync'), 'No execSync outside updatePluginCache()');
+    assert(!contentWithoutUpdate.includes('child_process'), 'No child_process outside updatePluginCache()');
+
+    // These apply to the FULL content
     assert(!scriptContent.includes('mklink'), 'No mklink shell command');
-    assert(scriptContent.includes("fs.symlinkSync"), 'Uses fs.symlinkSync instead');
+    assert(scriptContent.includes('fs.symlinkSync'), 'Uses fs.symlinkSync instead');
 }
 
 // ============================================================

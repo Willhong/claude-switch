@@ -1,2 +1,10 @@
 .omc/*
 .claude/commands/bump.md
+nul
+
+# typescript
+
+node_modules/
+
+# vscode
+.vscode/
